@@ -1,0 +1,20 @@
+# The directory where Buildbot stores the Git objects to track the evolution of
+# that present Git repository:
+/gitpoller-workdir
+
+# The Buildbot SQLite database:
+/state.sqlite
+
+# Twisted PID runtime file:
+/twistd.pid
+
+# Potential local workers directories:
+/workers/
+
+# Logs:
+/http.log
+/twistd.log
+
+# Python bytecode cache dirs or working dirs for Python code checkers:
+__pycache__/
+.mypy_cache/
