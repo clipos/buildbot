@@ -55,6 +55,7 @@ class BuildDockerImage(buildbot.process.factory.BuildFactory):
     """
 
     def __init__(self, flavor: str,
+                 buildmaster_setup: clipos.buildmaster.SetupSettings,
                  buildbot_worker_version: Optional[str] = None):
         # Initialize Build factory from parent class:
         super().__init__()
@@ -93,6 +94,9 @@ class BuildDockerImage(buildbot.process.factory.BuildFactory):
                 "."  # docker build requires the path to its context
             ],
             workdir=location_to_dockerfile,
+            env={
+                "DOCKER_HOST": buildmaster_setup.docker_host_uri,
+            },
         ))
 
 

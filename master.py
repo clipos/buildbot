@@ -133,7 +133,8 @@ for flavor, props in clipos.workers.DockerLatentWorker.FLAVORS.items():
                 docker_operations_worker.name,
             ],
 
-            factory=clipos.build_factories.BuildDockerImage(flavor=flavor),
+            factory=clipos.build_factories.BuildDockerImage(
+                flavor=flavor, buildmaster_setup=setup),
         )
     )
 
