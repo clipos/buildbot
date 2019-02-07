@@ -38,7 +38,7 @@ def _get_artifact_path(base_path: str,
     def renderable(props):
         sanitized_buildername = re.sub(
             r'[^a-zA-Z0-9\.\-\_\:]+', "_",
-            props.getProperty(buildername_property_name))
+            props.getProperty(buildername_property_name, ""))
         return os.path.join(base_path, sanitized_buildername, *path_items)
     return renderable
 
