@@ -233,6 +233,16 @@ class SetupSettings(object):
             return "artifacts"
 
     @property
+    def artifacts_base_url(self) -> Optional[str]:
+        """The base URL to use to expose the artifacts built by the Buildbot
+        workers."""
+
+        if self.__settings:
+            return self.__settings["BUILDBOT_ARTIFACTS_BASE_URL"]
+        else:
+            return None
+
+    @property
     def docker_host_uri(self) -> str:
         """The URL to the host Docker daemon socket"""
 

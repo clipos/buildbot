@@ -496,6 +496,10 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
     def _uploadSourceTreeQuicksyncArtifacts(self):
         """Upload the source tree artifacts to the buildmaster"""
 
+        artifacts_url_for_buildername = None
+        if self.buildmaster_setup.artifacts_base_url:
+            artifacts_url_for_buildername = _get_artifact_path(
+                self.buildmaster_setup.artifacts_base_url, "buildername")
         self.addStep(steps.MultipleFileUpload(
             name="save repo quick-sync artifacts on buildmaster",
             description=line(
@@ -508,6 +512,8 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
             ],
             masterdest=_get_artifact_path(self.buildmaster_setup.artifacts_dir,
                                           "buildername"),
+            mode=0o644,
+            url=artifacts_url_for_buildername,
         ))
 
     def _downloadSourceTreeQuicksyncArtifacts(self):
@@ -729,6 +735,10 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             },
         ))
 
+        artifacts_url_for_buildername = None
+        if self.buildmaster_setup.artifacts_base_url:
+            artifacts_url_for_buildername = _get_artifact_path(
+                self.buildmaster_setup.artifacts_base_url, "buildername")
         self.addStep(steps.MultipleFileUpload(
             name="save sdk artifact on buildmaster",
             description="save the SDK artifact archive on the buildmaster",
@@ -739,6 +749,8 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             ],
             masterdest=_get_artifact_path(self.buildmaster_setup.artifacts_dir,
                                           "buildername"),
+            mode=0o644,
+            url=artifacts_url_for_buildername,
         ))
 
     def buildAll(self):
