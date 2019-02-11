@@ -274,7 +274,7 @@ clipos_master_incremental_build_intraday_sched = schedulers.Nightly(
     builderNames=[
         clipos_master_incremental_on_debian_sid_builder.name,
     ],
-    dayOfWeek='0,1,2,3,4',  # only days before weekdays (0=Sunday, 4=Thursday)
+    dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
     hour=12, minute=30,  # at 12:30 (i.e. during lunch)
     codebases={"": {
         "repository": setup.clipos_manifest_git_url,
@@ -287,8 +287,8 @@ clipos_master_build_nightly_sched = schedulers.Nightly(
     builderNames=[
         clipos_master_fromscratch_on_debian_sid_builder.name,
     ],
-    dayOfWeek='0,1,2,3,4',  # only days before weekdays (0=Sunday, 4=Thursday)
-    hour=22, minute=0,  # at 22:00
+    dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
+    hour=0, minute=45,  # at 00:45
     codebases={"": {
         "repository": setup.clipos_manifest_git_url,
         "branch": "master",
@@ -300,8 +300,8 @@ repo_sync_nightly_sched = schedulers.Nightly(
     builderNames=[
         repo_sync_builder.name,
     ],
-    dayOfWeek='0,1,2,3,4',  # only days before weekdays (0=Sunday, 4=Thursday)
-    hour=21, minute=00,  # at 21:00
+    dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
+    hour=0, minute=0,  # at 00:00
     codebases={"": {
         "repository": setup.clipos_manifest_git_url,
         "branch": "master",
