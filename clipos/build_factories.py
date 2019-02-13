@@ -688,27 +688,18 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
         name is specified in the property
         ``buildername_providing_sdks_artifact``) or bootstrap the SDKs."""
 
-        self.downloadAndExtractSdksArtifact(consider_sdks_artifact_provider_property=True)
-        self.bootstrapSdks(consider_sdks_artifact_provider_property=True)
-        self.produceAndUploadSdksArtifact(consider_sdks_artifact_provider_property=True)
+        self.downloadAndExtractSdksArtifact()
+        self.bootstrapSdks()
+        self.produceAndUploadSdksArtifact()
 
-    def downloadAndExtractSdksArtifact(self,
-                                       consider_sdks_artifact_provider_property: bool = False):
-        """The argument `consider_sdks_artifact_provider_property` should only
-        be used by downloadExtractSdksOrBootstrapUploadSdks function."""
-
-        if not consider_sdks_artifact_provider_property:
-            stepsCondition = True
-        else:
-            stepsCondition = lambda s: s.getProperty("buildername_providing_sdks_artifact")
-
+    def downloadAndExtractSdksArtifact(self):
         self.addStep(steps.FileDownload(
             name="retrieve sdk artifacts",
             description=line(
                 """retrieve the SDKs artifact from the appropriate buildername
                 artifacts output on buildmaster"""),
             haltOnFailure=True,
-            doStepIf=stepsCondition,
+            doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifact")),
             mastersrc=compute_artifact_path_or_url(
                 self.buildmaster_setup.artifacts_dir,
                 "buildername_providing_sdks_artifact",
@@ -722,20 +713,11 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             description=line("""extract the SDK artifact archive in the current
                              working tree"""),
             haltOnFailure=True,
-            doStepIf=stepsCondition,
+            doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifact")),
             command=["tar", "-xvf", self.SDKS_ARTIFACT_FILENAME],
         ))
 
-    def bootstrapSdks(self,
-                      consider_sdks_artifact_provider_property: bool = False):
-        """The argument `consider_sdks_artifact_provider_property` should only
-        be used by downloadExtractSdksOrBootstrapUploadSdks function."""
-
-        if not consider_sdks_artifact_provider_property:
-            stepsCondition = True
-        else:
-            stepsCondition = lambda s: not s.getProperty("buildername_providing_sdks_artifact")
-
+    def bootstrapSdks(self):
         all_steps_cmds = [
             ("cosmk", "bootstrap", "clipos/sdk"),
             ("cosmk", "bootstrap", "clipos/sdk_debian"),
@@ -745,26 +727,17 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
                 # Cut out the step name as it must be lower than 50 chars:
                 name=str(" ".join(step_cmd))[:50],
                 haltOnFailure=True,
-                doStepIf=stepsCondition,
+                doStepIf=lambda step: not bool(step.getProperty("reuse_sdks_artifact")),
                 command=step_cmd,
             ))
 
-    def produceAndUploadSdksArtifact(self,
-                                     consider_sdks_artifact_provider_property: bool = False):
-        """The argument `consider_sdks_artifact_provider_property` should only
-        be used by downloadExtractSdksOrBootstrapUploadSdks function."""
-
-        if not consider_sdks_artifact_provider_property:
-            stepsCondition = True
-        else:
-            stepsCondition = lambda s: not s.getProperty("buildername_providing_sdks_artifact")
-
+    def produceAndUploadSdksArtifact(self):
         self.addStep(steps.ShellCommand(
             name="archive sdk artifact archive",
             description=line("""extract the SDK artifact archive in the current
                              working tree"""),
             haltOnFailure=True,
-            doStepIf=stepsCondition,
+            doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifact")),
             command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
                 r"""
                 set -e -u -o pipefail
@@ -790,7 +763,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             name="save sdk artifact on buildmaster",
             description="save the SDK artifact archive on the buildmaster",
             haltOnFailure=True,
-            doStepIf=stepsCondition,
+            doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifact")),
             workersrcs=[
                 self.SDKS_ARTIFACT_FILENAME,
             ],
@@ -806,7 +779,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
         self.addStep(steps.MasterShellCommand(
             name="symlink latest artifacts location on buildmaster",
             haltOnFailure=True,
-            doStepIf=stepsCondition,
+            doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifact")),
             command=[
                 "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
                 compute_artifact_path_or_url(
@@ -882,8 +855,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
 class ClipOsProductBuildBuildFactory(ClipOsToolkitEnvironmentBuildFactoryBase):
     """Build factory to build CLIP OS product"""
 
-    def __init__(self, reuse_sdks_artifacts: bool = False,
-                 **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
         self.cleanupWorkspaceIfRequested(keep_artifacts=True)

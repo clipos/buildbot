@@ -185,7 +185,6 @@ for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
         properties={
             "cleanup_workspace": True,
             "force_source_tree_artifacts_fetch": False,
-            # "from_scratch": True,   # FIXME: use it?
             "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
         },
     )
@@ -210,8 +209,9 @@ clipos_incremental_on_reference_builder = util.BuilderConfig(
     properties={
         "cleanup_workspace": False,
         "force_source_tree_artifacts_fetch": False,
-        #"from_scratch": False,  # FIXME: use it?
         "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
+
+        "reuse_sdks_artifact": True,
         "buildername_providing_sdks_artifact": clipos_fromscratch_on_reference_builder.name,
     },
 )
@@ -412,32 +412,6 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
 
             util.NestedParameter(
                 name="",  # parameter namespacing is cumbersome to manage
-                label="CLIP OS build options",
-                layout="vertical",
-                fields=[
-                    # FIXME: use it?
-                    #util.BooleanParameter(
-                    #    name="from_scratch",
-                    #    label="Build from scratch",
-                    #    default=True,
-                    #),
-                    util.ChoiceStringParameter(
-                        name="buildername_providing_sdks_artifact",
-                        label="Reuse SDKs artifact from last run of builder",
-                        choices=[
-                            # All the builders that build a CLIP OS image from
-                            # scratch:
-                            *(builder.name for builder in c['builders']
-                              if ('clipos' in builder.tags and
-                                  'from-scratch' in builder.tags))
-                        ],
-                        default=clipos_fromscratch_on_reference_builder.name,
-                    ),
-                ],
-            ),
-
-            util.NestedParameter(
-                name="",  # parameter namespacing is cumbersome to manage
                 label="Source tree checkout",
                 layout="vertical",
                 fields=[
@@ -482,6 +456,32 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
                     ),
                 ],
             ),
+
+            util.NestedParameter(
+                name="",  # parameter namespacing is cumbersome to manage
+                label="CLIP OS build process options",
+                layout="vertical",
+                fields=[
+                    util.BooleanParameter(
+                        name="reuse_sdks_artifact",
+                        label="Reuse SDKs artifacts instead of bootstrapping SDKs from scratch",
+                        default=True,
+                    ),
+                    util.ChoiceStringParameter(
+                        name="buildername_providing_sdks_artifact",
+                        label="Builder name from which retrieving SDKs artifact (latest artifacts will be used)",
+                        choices=[
+                            # All the builders that build a CLIP OS image from
+                            # scratch:
+                            *(builder.name for builder in c['builders']
+                              if ('clipos' in builder.tags and
+                                  'from-scratch' in builder.tags))
+                        ],
+                        default=clipos_fromscratch_on_reference_builder.name,
+                    ),
+                ],
+            ),
+
         ],
     )],
 )
