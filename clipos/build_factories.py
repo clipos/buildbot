@@ -817,6 +817,44 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             ],
         ))
 
+    def buildAndUploadDocs(self):
+        self.addStep(clipos.steps.ToolkitEnvironmentShellCommand(
+            name="build docs",
+            haltOnFailure=True,
+            # Note: build_doc.sh is exposed in PATH by the source_me script.
+            command="build_doc.sh",
+        ))
+
+        self.addStep(steps.DirectoryUpload(
+            name="save docs artifact on buildmaster",
+            description="save the documentation artifact archive on the buildmaster",
+            haltOnFailure=True,
+            workersrc="out/doc/_build",
+            masterdest=compute_artifact_path_or_url(
+                self.buildmaster_setup.artifacts_dir,
+                "buildername",
+                buildnumber_shard=True,
+            ),
+            url=compute_artifact_path_or_url(
+                self.buildmaster_setup.artifacts_base_url,
+                "buildername",
+                buildnumber_shard=True,
+            )
+        ))
+
+        self.addStep(steps.MasterShellCommand(
+            name="symlink latest artifacts location on buildmaster",
+            haltOnFailure=True,
+            command=[
+                "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
+                compute_artifact_path_or_url(
+                    self.buildmaster_setup.artifacts_dir,
+                    "buildername",
+                    buildnumber_shard="latest",
+                ),
+            ],
+        ))
+
     def buildAll(self):
         all_steps_cmds = [
             ("cosmk", "build", "clipos/core"),
@@ -857,6 +895,18 @@ class ClipOsProductBuildBuildFactory(ClipOsToolkitEnvironmentBuildFactoryBase):
         self.downloadExtractSdksOrBootstrapUploadSdks()
 
         self.buildAll()
+
+
+class ClipOsProductDocumentationBuildBuildFactory(ClipOsToolkitEnvironmentBuildFactoryBase):
+    """Build factory to build the CLIP OS product documentation."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.cleanupWorkspaceIfRequested(keep_artifacts=True)
+        self.syncSources(use_repo_quicksync_artifacts=True)
+        self.cleanCosmkDirectories()
+        self.buildAndUploadDocs()
 
 
 # vim: set ft=python ts=4 sts=4 sw=4 et tw=79:
