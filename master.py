@@ -150,11 +150,11 @@ repo_sync_builder = util.BuilderConfig(
         constant repo syncs."""),
     tags=['repo-sync', 'update-artifacts'],
 
-    # The Debian sid based CLIP OS build environemnt latent Docker worker that
-    # is NOT privileged:
+    # The reference CLIP OS build environemnt latent Docker worker that is NOT
+    # privileged:
     workernames=[
         worker.name for worker in all_clipos_docker_latent_workers
-        if worker.flavor == 'debian-sid' and not worker.privileged
+        if worker.flavor == reference_worker_flavor and not worker.privileged
     ],
 
     factory=clipos.build_factories.RepoSyncFromScratchAndArchive(
@@ -169,12 +169,11 @@ repo_sync_builder = util.BuilderConfig(
 
 # Builders for CLIP OS for master branch of manifest for all the build
 # environment flavors:
-clipos_master_fromscratch_builders = []
+clipos_fromscratch_builders = []
 for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
     builder = util.BuilderConfig(
-        name='clipos master env:{}'.format(flavor),
-        tags=['clipos', 'from-scratch', 'manifest-branch:master',
-              'docker-env:{}'.format(flavor)],
+        name='clipos env:{}'.format(flavor),
+        tags=['clipos', 'from-scratch', 'docker-env:{}'.format(flavor)],
         workernames=[
             worker.name for worker in all_clipos_docker_latent_workers
             if worker.flavor == flavor and worker.privileged
@@ -186,25 +185,23 @@ for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
         properties={
             "cleanup_workspace": True,
             "force_source_tree_artifacts_fetch": False,
-            "from_scratch": True,
-
-            # new
+            # "from_scratch": True,   # FIXME: use it?
             "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
         },
     )
-    # Keep a reference on debian-sid based environment for the nightly
+    # Keep a reference on the reference builder environment for the nightly
     # scheduler:
-    if flavor == 'debian-sid':
-        clipos_master_fromscratch_on_debian_sid_builder = builder
-    clipos_master_fromscratch_builders.append(builder)
+    if flavor == reference_worker_flavor:
+        clipos_fromscratch_on_reference_builder = builder
+    clipos_fromscratch_builders.append(builder)
 
-clipos_master_incremental_on_debian_sid_builder = util.BuilderConfig(
-    name='clipos master incremental env:{}'.format(reference_worker_flavor),
-    tags=['clipos', 'incremental-build', 'manifest-branch:master',
+clipos_incremental_on_reference_builder = util.BuilderConfig(
+    name='clipos incremental env:{}'.format(reference_worker_flavor),
+    tags=['clipos', 'incremental-build',
           'docker-env:{}'.format(reference_worker_flavor)],
     workernames=[
         worker.name for worker in all_clipos_docker_latent_workers
-        if worker.flavor == 'debian-sid' and worker.privileged
+        if worker.flavor == reference_worker_flavor and worker.privileged
     ],
     factory=clipos.build_factories.ClipOsProductBuildBuildFactory(
         # Pass on the buildmaster setup settings
@@ -213,12 +210,9 @@ clipos_master_incremental_on_debian_sid_builder = util.BuilderConfig(
     properties={
         "cleanup_workspace": False,
         "force_source_tree_artifacts_fetch": False,
-        "from_scratch": False,
-        "reuse_artifacts_from_builder": clipos_master_fromscratch_on_debian_sid_builder.name,
-
-        # new
+        #"from_scratch": False,  # FIXME: use it?
         "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
-        "buildername_providing_sdks_artifact": clipos_master_fromscratch_on_debian_sid_builder.name,
+        "buildername_providing_sdks_artifact": clipos_fromscratch_on_reference_builder.name,
     },
 )
 
@@ -228,7 +222,7 @@ customizable_clipos_builder = util.BuilderConfig(
     tags=['clipos', 'custom', 'docker-env:{}'.format(reference_worker_flavor)],
     workernames=[
         worker.name for worker in all_clipos_docker_latent_workers
-        if worker.flavor == 'debian-sid' and worker.privileged
+        if worker.flavor == reference_worker_flavor and worker.privileged
     ],
     factory=clipos.build_factories.ClipOsProductBuildBuildFactory(
         # Pass on the buildmaster setup settings
@@ -237,7 +231,7 @@ customizable_clipos_builder = util.BuilderConfig(
     properties={
         # new
         "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
-        #"buildername_providing_sdks_artifact": clipos_master_fromscratch_on_debian_sid_builder.name,
+        #"buildername_providing_sdks_artifact": clipos_fromscratch_on_reference_builder.name,
     },
 )
 
@@ -249,12 +243,12 @@ c['builders'] = [
     # Repo sync test
     repo_sync_builder,
 
-    # CLIP OS build from scratch from "master" manifest branch
-    *clipos_master_fromscratch_builders,
+    # CLIP OS build from scratch
+    *clipos_fromscratch_builders,
 
     # CLIP OS incremental build from the prebuild artifacts from the "from
     # scratch" identical build
-    clipos_master_incremental_on_debian_sid_builder,
+    clipos_incremental_on_reference_builder,
 
     # Fully customizable CLIP OS builder
     customizable_clipos_builder,
@@ -269,10 +263,10 @@ c['builders'] = [
 #
 
 # CLIP OS builds schedulers:
-clipos_master_incremental_build_intraday_sched = schedulers.Nightly(
+clipos_incremental_build_intraday_sched = schedulers.Nightly(
     name='clipos-master-intraday-incremental-build',
     builderNames=[
-        clipos_master_incremental_on_debian_sid_builder.name,
+        clipos_incremental_on_reference_builder.name,
     ],
     dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
     hour=12, minute=30,  # at 12:30 (i.e. during lunch)
@@ -282,10 +276,10 @@ clipos_master_incremental_build_intraday_sched = schedulers.Nightly(
     }},
 )
 
-clipos_master_build_nightly_sched = schedulers.Nightly(
+clipos_build_nightly_sched = schedulers.Nightly(
     name='clipos-master-nightly-build',
     builderNames=[
-        clipos_master_fromscratch_on_debian_sid_builder.name,
+        clipos_fromscratch_on_reference_builder.name,
     ],
     dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
     hour=0, minute=45,  # at 00:45
@@ -308,10 +302,10 @@ repo_sync_nightly_sched = schedulers.Nightly(
     }},
 )
 
-clipos_master_build_weekly_sched = schedulers.Nightly(
+clipos_build_weekly_sched = schedulers.Nightly(
     name='clipos-master-weekly-build',
     builderNames=[
-        *(builder.name for builder in clipos_master_fromscratch_builders),
+        *(builder.name for builder in clipos_fromscratch_builders),
     ],
     dayOfWeek='6',  # on Saturdays
     hour=12, minute=0,  # at noon
@@ -381,34 +375,15 @@ repo_sync_force_sched = schedulers.ForceScheduler(
     ),
 )
 
-clipos_master_build_force_sched = schedulers.ForceScheduler(
-    name='force-clipos-build',
-    buttonName="Force a rebuild now",
-    label="Rebuild now a CLIP OS build",
-    builderNames=[
-        # All the builders that build a CLIP OS image from scratch and from
-        # master branch of manifest:
-        *(builder.name for builder in c['builders']
-          if ('clipos' in builder.tags and
-              'manifest-branch:master' in builder.tags and
-              'custom' not in builder.tags))
-    ],
-    codebases=oneCodebase(
-        project=None,
-        repository=setup.clipos_manifest_git_url,
-        branch="master",
-        revision=None,
-    ),
-)
-
-# Scheduler for the CLIP OS custom builder (on-demand builds):
-customizable_clipos_builds_force_sched = schedulers.ForceScheduler(
-    name='clipos-custom',
-    buttonName="Start custom build",
+# Scheduler for the CLIP OS on-demand custom builds:
+clipos_custom_build_force_sched = schedulers.ForceScheduler(
+    name='clipos-custom-build',
+    buttonName="Start a custom build",
     label="Custom build",
     builderNames=[
-        # Only one builder is eligible to this scheduler:
-        customizable_clipos_builder.name,
+        # All the builders that build a CLIP OS image:
+        *(builder.name for builder in c['builders']
+          if 'clipos' in builder.tags),
     ],
     codebases = [
         util.CodebaseParameter(
@@ -440,11 +415,12 @@ customizable_clipos_builds_force_sched = schedulers.ForceScheduler(
                 label="CLIP OS build options",
                 layout="vertical",
                 fields=[
-                    util.BooleanParameter(
-                        name="from_scratch",
-                        label="Build from scratch",
-                        default=True,
-                    ),
+                    # FIXME: use it?
+                    #util.BooleanParameter(
+                    #    name="from_scratch",
+                    #    label="Build from scratch",
+                    #    default=True,
+                    #),
                     util.ChoiceStringParameter(
                         name="buildername_providing_sdks_artifact",
                         label="Reuse SDKs artifact from last run of builder",
@@ -455,7 +431,7 @@ customizable_clipos_builds_force_sched = schedulers.ForceScheduler(
                               if ('clipos' in builder.tags and
                                   'from-scratch' in builder.tags))
                         ],
-                        default=clipos_master_fromscratch_on_debian_sid_builder.name,
+                        default=clipos_fromscratch_on_reference_builder.name,
                     ),
                 ],
             ),
@@ -501,7 +477,7 @@ customizable_clipos_builds_force_sched = schedulers.ForceScheduler(
                     ),
                     util.BooleanParameter(
                         name="force_source_tree_artifacts_fetch",
-                        label="Force the fetch of the source tree artifacts",
+                        label="Force the fetch of the source tree quick-sync artifacts",
                         default=False,
                     ),
                 ],
@@ -512,21 +488,20 @@ customizable_clipos_builds_force_sched = schedulers.ForceScheduler(
 
 c['schedulers'] = [
     # Intra-day schedulers:
-    clipos_master_incremental_build_intraday_sched,
+    clipos_incremental_build_intraday_sched,
 
     # Nightly schedulers:
     repo_sync_nightly_sched,
-    clipos_master_build_nightly_sched,
+    clipos_build_nightly_sched,
 
     # Weekly schedulers:
-    clipos_master_build_weekly_sched,
+    clipos_build_weekly_sched,
     docker_buildenv_image_rebuild_weekly_sched,
 
     # Forced schedulers:
     repo_sync_force_sched,
-    clipos_master_build_force_sched,
     docker_buildenv_image_rebuild_force_sched,
-    customizable_clipos_builds_force_sched,
+    clipos_custom_build_force_sched,
 ]
 
 
