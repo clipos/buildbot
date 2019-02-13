@@ -27,9 +27,10 @@ import clipos.workers
 from .commons import line  # utility functions and stuff
 
 
-def _get_artifact_path(base_path: str,
-                       buildername_property_name: str,
-                       *path_items: str):
+def compute_artifact_path_or_url(base_path_or_url: str,
+                                 buildername_property_name: str,
+                                 *path_items: str,
+                                 buildnumber_shard: Union[bool, str] = False):
     """Returns a Renderable function that returns the path to the artifact name
     from the builder name (contained into the `buildername_property_name`
     property) and a list of path items to be appended to that path."""
@@ -39,7 +40,22 @@ def _get_artifact_path(base_path: str,
         sanitized_buildername = re.sub(
             r'[^a-zA-Z0-9\.\-\_\:]+', "_",
             props.getProperty(buildername_property_name, ""))
-        return os.path.join(base_path, sanitized_buildername, *path_items)
+        if buildnumber_shard:
+            if isinstance(buildnumber_shard, bool):
+                # Beware: getProperty of "buildnumber" property returns an int
+                # and thus must be converted into a str, otherwise
+                # os.path.join() will raise an excecption further down...
+                buildnumber = str(props.getProperty("buildnumber",
+                                                    "_unknown_buildnumber_"))
+            elif isinstance(buildnumber_shard, str):
+                buildnumber = buildnumber_shard
+            else:
+                raise ValueError("buildnumber_shard is of unexpected type")
+            return os.path.join(base_path_or_url, sanitized_buildername,
+                                buildnumber, *path_items)
+        else:
+            return os.path.join(base_path_or_url, sanitized_buildername,
+                                *path_items)
     return renderable
 
 
@@ -498,8 +514,11 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
 
         artifacts_url_for_buildername = None
         if self.buildmaster_setup.artifacts_base_url:
-            artifacts_url_for_buildername = _get_artifact_path(
-                self.buildmaster_setup.artifacts_base_url, "buildername")
+            artifacts_url_for_buildername = compute_artifact_path_or_url(
+                self.buildmaster_setup.artifacts_base_url,
+                "buildername",
+                buildnumber_shard=True,
+            )
         self.addStep(steps.MultipleFileUpload(
             name="save repo quick-sync artifacts on buildmaster",
             description=line(
@@ -510,10 +529,26 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
                 self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
                 self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
             ],
-            masterdest=_get_artifact_path(self.buildmaster_setup.artifacts_dir,
-                                          "buildername"),
+            masterdest=compute_artifact_path_or_url(
+                self.buildmaster_setup.artifacts_dir,
+                "buildername",
+                buildnumber_shard=True,
+            ),
             mode=0o644,
+            keepstamp=True,
             url=artifacts_url_for_buildername,
+        ))
+        self.addStep(steps.MasterShellCommand(
+            name="symlink latest artifacts location on buildmaster",
+            haltOnFailure=True,
+            command=[
+                "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
+                compute_artifact_path_or_url(
+                    self.buildmaster_setup.artifacts_dir,
+                    "buildername",
+                    buildnumber_shard="latest",
+                ),
+            ],
         ))
 
     def _downloadSourceTreeQuicksyncArtifacts(self):
@@ -556,9 +591,12 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
             description='retrieve the ".repo" directory archive from the buildmaster',
             haltOnFailure=True,
             doStepIf=is_artifact_download_required("repo-dir"),
-            mastersrc=_get_artifact_path(self.buildmaster_setup.artifacts_dir,
-                                         'buildername_providing_repo_quicksync_artifacts',
-                                         self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME),
+            mastersrc=compute_artifact_path_or_url(
+                self.buildmaster_setup.artifacts_dir,
+                'buildername_providing_repo_quicksync_artifacts',
+                self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
+                buildnumber_shard="latest",
+            ),
             workerdest=self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
         ))
 
@@ -567,9 +605,12 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
             description='retrieve the ".git/lfs" directories archive from the buildmaster',
             haltOnFailure=True,
             doStepIf=is_artifact_download_required("git-lfs-dirs"),
-            mastersrc=_get_artifact_path(self.buildmaster_setup.artifacts_dir,
-                                         'buildername_providing_repo_quicksync_artifacts',
-                                         self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME),
+            mastersrc=compute_artifact_path_or_url(
+                self.buildmaster_setup.artifacts_dir,
+                'buildername_providing_repo_quicksync_artifacts',
+                self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
+                buildnumber_shard="latest",
+            ),
             workerdest=self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
         ))
 
@@ -668,9 +709,12 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
                 artifacts output on buildmaster"""),
             haltOnFailure=True,
             doStepIf=stepsCondition,
-            mastersrc=_get_artifact_path(self.buildmaster_setup.artifacts_dir,
-                                         "buildername_providing_sdks_artifact",
-                                         self.SDKS_ARTIFACT_FILENAME),
+            mastersrc=compute_artifact_path_or_url(
+                self.buildmaster_setup.artifacts_dir,
+                "buildername_providing_sdks_artifact",
+                self.SDKS_ARTIFACT_FILENAME,
+                buildnumber_shard="latest",
+            ),
             workerdest=self.SDKS_ARTIFACT_FILENAME,
         ))
         self.addStep(steps.ShellCommand(
@@ -737,8 +781,11 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
 
         artifacts_url_for_buildername = None
         if self.buildmaster_setup.artifacts_base_url:
-            artifacts_url_for_buildername = _get_artifact_path(
-                self.buildmaster_setup.artifacts_base_url, "buildername")
+            artifacts_url_for_buildername = compute_artifact_path_or_url(
+                self.buildmaster_setup.artifacts_base_url,
+                "buildername",
+                buildnumber_shard=True,
+            )
         self.addStep(steps.MultipleFileUpload(
             name="save sdk artifact on buildmaster",
             description="save the SDK artifact archive on the buildmaster",
@@ -747,10 +794,27 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             workersrcs=[
                 self.SDKS_ARTIFACT_FILENAME,
             ],
-            masterdest=_get_artifact_path(self.buildmaster_setup.artifacts_dir,
-                                          "buildername"),
+            masterdest=compute_artifact_path_or_url(
+                self.buildmaster_setup.artifacts_dir,
+                "buildername",
+                buildnumber_shard=True,
+            ),
             mode=0o644,
+            keepstamp=True,
             url=artifacts_url_for_buildername,
+        ))
+        self.addStep(steps.MasterShellCommand(
+            name="symlink latest artifacts location on buildmaster",
+            haltOnFailure=True,
+            doStepIf=stepsCondition,
+            command=[
+                "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
+                compute_artifact_path_or_url(
+                    self.buildmaster_setup.artifacts_dir,
+                    "buildername",
+                    buildnumber_shard="latest",
+                ),
+            ],
         ))
 
     def buildAll(self):
