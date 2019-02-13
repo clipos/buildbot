@@ -216,6 +216,25 @@ clipos_incremental_on_reference_builder = util.BuilderConfig(
     },
 )
 
+clipos_docs_on_reference_builder = util.BuilderConfig(
+    name='clipos-docs env:{}'.format(reference_worker_flavor),
+    tags=['clipos-docs', 'docker-env:{}'.format(reference_worker_flavor)],
+    workernames=[
+        worker.name for worker in all_clipos_docker_latent_workers
+        if worker.flavor == reference_worker_flavor and not worker.privileged
+    ],
+    factory=clipos.build_factories.ClipOsProductDocumentationBuildBuildFactory(
+        # Pass on the buildmaster setup settings
+        buildmaster_setup=setup,
+    ),
+    properties={
+        "cleanup_workspace": False,
+        "force_source_tree_artifacts_fetch": False,
+        "from_scratch": False,
+        "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
+    },
+)
+
 # Customizable build for CLIP OS
 customizable_clipos_builder = util.BuilderConfig(
     name='clipos custom env:{}'.format(reference_worker_flavor),
@@ -250,6 +269,9 @@ c['builders'] = [
     # scratch" identical build
     clipos_incremental_on_reference_builder,
 
+    # Docs build
+    clipos_docs_on_reference_builder,
+
     # Fully customizable CLIP OS builder
     customizable_clipos_builder,
 ]
@@ -267,6 +289,7 @@ clipos_incremental_build_intraday_sched = schedulers.Nightly(
     name='clipos-master-intraday-incremental-build',
     builderNames=[
         clipos_incremental_on_reference_builder.name,
+        clipos_docs_on_reference_builder.name,
     ],
     dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
     hour=12, minute=30,  # at 12:30 (i.e. during lunch)
@@ -280,6 +303,7 @@ clipos_build_nightly_sched = schedulers.Nightly(
     name='clipos-master-nightly-build',
     builderNames=[
         clipos_fromscratch_on_reference_builder.name,
+        clipos_docs_on_reference_builder.name,
     ],
     dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
     hour=0, minute=45,  # at 00:45
