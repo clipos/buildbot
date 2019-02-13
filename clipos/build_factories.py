@@ -140,34 +140,32 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
         """Cleanup the workspace if this is requested via the build property
         "cleanup_workspace"."""
 
-        def assert_cleanup(step: BuildStep) -> bool:
-            return step.getProperty("cleanup_workspace")
-
         self.addStep(steps.ShellCommand(
             name="cleanup workspace",
             description="cleanup workspace",
             haltOnFailure=True,
-            doStepIf=assert_cleanup,
+            doStepIf=lambda step: bool(step.getProperty("cleanup_workspace")),
             command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
                 r"""
                 set -e -u -o pipefail
 
-                if [[ "${keep_artifacts:-}" -ne 0 ]]; then
+                if [[ "${force_repo_quicksync_artifacts_download:-}" -ne 0 ]]; then
+                    echo "Cleanup workspace completely..."
+                    sudo find . -delete
+                else
                     echo "Cleanup workspace but keep repo quick-sync artifacts..."
                     sudo find . -mindepth 1 \
                         \! \( -path "./${repodir_archive_filename}" -or \
                               -path "./${gitlfsdirs_archive_filename}" \) \
                         -delete
-                else
-                    echo "Cleanup workspace completely..."
-                    sudo find . -delete
                 fi
 
                 # List contents after cleanup (to ease CI debugging)
                 ls -la
                 """).strip()],
             env={
-                "keep_artifacts": "1" if keep_artifacts else "0",
+                "force_repo_quicksync_artifacts_download": util.Interpolate(
+                    "%(prop:force_repo_quicksync_artifacts_download:#?|1|0)s"),
                 "repodir_archive_filename": self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
                 "gitlfsdirs_archive_filename": self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
             },
@@ -558,6 +556,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
         self.addStep(steps.SetPropertyFromCommand(
             name="assert which artifact download is required",
             property="which_repo_quicksync_artifact_to_download",
+            doStepIf=lambda step: not bool(step.getProperty("force_repo_quicksync_artifacts_download")),
             command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
                 r"""
                 set -e -u -o pipefail
@@ -580,10 +579,10 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
         def is_artifact_download_required(artifact_type):
             def checker(step: BuildStep) -> bool:
                 return (
+                    bool(step.getProperty("force_repo_quicksync_artifacts_download")) or
                     (artifact_type in
                      step.getProperty("which_repo_quicksync_artifact_to_download").split()
-                    ) or
-                    step.getProperty("force_source_tree_artifacts_fetch"))
+                    ))
             return checker
 
         self.addStep(steps.FileDownload(

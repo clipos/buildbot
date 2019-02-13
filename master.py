@@ -161,10 +161,6 @@ repo_sync_builder = util.BuilderConfig(
         # Pass on the buildmaster setup settings
         buildmaster_setup=setup,
     ),
-
-    properties={
-        "cleanup_workspace": True,
-    },
 )
 
 # Builders for CLIP OS for master branch of manifest for all the build
@@ -182,11 +178,6 @@ for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
             # Pass on the buildmaster setup settings
             buildmaster_setup=setup,
         ),
-        properties={
-            "cleanup_workspace": True,
-            "force_source_tree_artifacts_fetch": False,
-            "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
-        },
     )
     # Keep a reference on the reference builder environment for the nightly
     # scheduler:
@@ -206,14 +197,6 @@ clipos_incremental_on_reference_builder = util.BuilderConfig(
         # Pass on the buildmaster setup settings
         buildmaster_setup=setup,
     ),
-    properties={
-        "cleanup_workspace": False,
-        "force_source_tree_artifacts_fetch": False,
-        "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
-
-        "reuse_sdks_artifact": True,
-        "buildername_providing_sdks_artifact": clipos_fromscratch_on_reference_builder.name,
-    },
 )
 
 clipos_docs_on_reference_builder = util.BuilderConfig(
@@ -227,12 +210,6 @@ clipos_docs_on_reference_builder = util.BuilderConfig(
         # Pass on the buildmaster setup settings
         buildmaster_setup=setup,
     ),
-    properties={
-        "cleanup_workspace": False,
-        "force_source_tree_artifacts_fetch": False,
-        "from_scratch": False,
-        "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
-    },
 )
 
 # Customizable build for CLIP OS
@@ -247,11 +224,6 @@ customizable_clipos_builder = util.BuilderConfig(
         # Pass on the buildmaster setup settings
         buildmaster_setup=setup,
     ),
-    properties={
-        # new
-        "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
-        #"buildername_providing_sdks_artifact": clipos_fromscratch_on_reference_builder.name,
-    },
 )
 
 
@@ -297,6 +269,14 @@ clipos_incremental_build_intraday_sched = schedulers.Nightly(
         "repository": setup.clipos_manifest_git_url,
         "branch": "master",
     }},
+    properties={
+        "cleanup_workspace": True,
+        "force_repo_quicksync_artifacts_download": False,
+        "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
+
+        "reuse_sdks_artifact": True,
+        "buildername_providing_sdks_artifact": clipos_fromscratch_on_reference_builder.name,
+    },
 )
 
 clipos_build_nightly_sched = schedulers.Nightly(
@@ -311,6 +291,13 @@ clipos_build_nightly_sched = schedulers.Nightly(
         "repository": setup.clipos_manifest_git_url,
         "branch": "master",
     }},
+    properties={
+        "cleanup_workspace": True,
+        "force_repo_quicksync_artifacts_download": False,
+        "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
+
+        "reuse_sdks_artifact": False,
+    },
 )
 
 repo_sync_nightly_sched = schedulers.Nightly(
@@ -324,6 +311,9 @@ repo_sync_nightly_sched = schedulers.Nightly(
         "repository": setup.clipos_manifest_git_url,
         "branch": "master",
     }},
+    properties={
+        "cleanup_workspace": True,
+    },
 )
 
 clipos_build_weekly_sched = schedulers.Nightly(
@@ -337,6 +327,13 @@ clipos_build_weekly_sched = schedulers.Nightly(
         "repository": setup.clipos_manifest_git_url,
         "branch": "master",
     }},
+    properties={
+        "cleanup_workspace": True,
+        "force_repo_quicksync_artifacts_download": False,
+        "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
+
+        "reuse_sdks_artifact": False,
+    },
 )
 
 # Buildbot worker Dockerized environment build schedulers:
@@ -397,6 +394,11 @@ repo_sync_force_sched = schedulers.ForceScheduler(
         branch="master",
         revision=None,
     ),
+    properties=[
+        util.FixedParameter(
+            "cleanup_workspace", default=True,
+        ),
+    ],
 )
 
 # Scheduler for the CLIP OS on-demand custom builds:
@@ -407,7 +409,7 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
     builderNames=[
         # All the builders that build a CLIP OS image:
         *(builder.name for builder in c['builders']
-          if 'clipos' in builder.tags),
+          if 'clipos' in builder.tags or 'clipos-docs' in builder.tags),
     ],
     codebases = [
         util.CodebaseParameter(
@@ -429,13 +431,17 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
             revision=None,
         ),
     ],
-    properties=[util.NestedParameter(
-        name="",  # parameter namespacing is cumbersome to manage
-        layout="tabs",
-        fields=[
+    properties=[
+        util.FixedParameter(
+            "buildername_providing_repo_quicksync_artifacts",
+            default=repo_sync_builder.name,
+        ),
 
-            util.NestedParameter(
-                name="",  # parameter namespacing is cumbersome to manage
+        # Note: we deliberately leave the name argument to empty strings for
+        # the NestedParameter classes below because parameter namespacing is
+        # way too cumbersome to manage in the build factories.
+        util.NestedParameter(name="", layout="tabs", fields=[
+            util.NestedParameter(name="",
                 label="Source tree checkout",
                 layout="vertical",
                 fields=[
@@ -463,8 +469,7 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
                 ],
             ),
 
-            util.NestedParameter(
-                name="",  # parameter namespacing is cumbersome to manage
+            util.NestedParameter(name="",
                 label="Workspace settings",
                 layout="vertical",
                 fields=[
@@ -474,15 +479,14 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
                         default=True,
                     ),
                     util.BooleanParameter(
-                        name="force_source_tree_artifacts_fetch",
+                        name="force_repo_quicksync_artifacts_download",
                         label="Force the fetch of the source tree quick-sync artifacts",
                         default=False,
                     ),
                 ],
             ),
 
-            util.NestedParameter(
-                name="",  # parameter namespacing is cumbersome to manage
+            util.NestedParameter(name="",
                 label="CLIP OS build process options",
                 layout="vertical",
                 fields=[
