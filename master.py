@@ -72,24 +72,39 @@ BuildmasterConfig = c = setup.buildmaster_config_base()
 # as some nasty stuff can be done when a user has access to the Docker daemon:
 docker_operations_worker = worker.LocalWorker('_docker-client-localworker')
 
+# Most of the Docker latent workers are there to ensure that the CLIP OS
+# toolkit is functional on most of the popular Linux distributions. It makes
+# few sense to build each time the CLIP OS builds on all the workers, instead
+# we chose a reference Docker worker flavor (on which we are going to do all
+# the builds) and we leave the rest of the flavors for weekly builds just to
+# make sure that the CLIP OS toolkit is functional on those flavors of worker.
+reference_worker_flavor = 'debian-sid'
+unprivileged_reference_workers = []   # changed below
+privileged_reference_workers = []  # changed below
+
 # All the Docker latent workers defined and usable by the CLIP OS project
 # buildbot:
 all_clipos_docker_latent_workers = []
 for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
     # Generate both privileged and unprivileged versions of container workers:
     for privileged in [False, True]:
-        all_clipos_docker_latent_workers.append(
-            clipos.workers.DockerLatentWorker(
-                flavor=flavor,
-                privileged=privileged,
-                container_network_mode=setup.docker_worker_containers_network_mode,
-                docker_host=setup.docker_host_uri,
-                use_volume_for_workspaces=True,
+        worker = clipos.workers.DockerLatentWorker(
+            flavor=flavor,
+            privileged=privileged,
+            container_network_mode=setup.docker_worker_containers_network_mode,
+            docker_host=setup.docker_host_uri,
+            use_volume_for_workspaces=True,
 
-                # By default, max_builds is unlimited, reduce this:
-                max_builds=5,  # TODO: any better heuristic?
-            )
+            # By default, max_builds is unlimited, reduce this:
+            max_builds=5,  # TODO: any better heuristic?
         )
+        all_clipos_docker_latent_workers.append(worker)
+
+        if flavor == reference_worker_flavor:
+            if privileged:
+                privileged_reference_workers.append(worker)
+            else:
+                unprivileged_reference_workers.append(worker)
 
 c['workers'] = [
     # The worker for the Docker operations (create Docker images to be used as
@@ -99,11 +114,6 @@ c['workers'] = [
     # All the Docker latent workers for CLIP OS build (the build envs):
     *all_clipos_docker_latent_workers,
 ]
-
-# Since the various flavors of Buildbot worker are expected to produce the same
-# result
-reference_worker_flavor = 'debian-sid'
-
 
 
 #
@@ -163,13 +173,12 @@ repo_sync_builder = util.BuilderConfig(
     ),
 )
 
-# Builders for CLIP OS for master branch of manifest for all the build
-# environment flavors:
-clipos_fromscratch_builders = []
+# CLIP OS complete build on all the Docker latent worker flavors:
+clipos_on_all_flavors_builders = []
 for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
     builder = util.BuilderConfig(
         name='clipos env:{}'.format(flavor),
-        tags=['clipos', 'from-scratch', 'docker-env:{}'.format(flavor)],
+        tags=['clipos', 'docker-env:{}'.format(flavor)],
         workernames=[
             worker.name for worker in all_clipos_docker_latent_workers
             if worker.flavor == flavor and worker.privileged
@@ -183,44 +192,23 @@ for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
     # scheduler:
     if flavor == reference_worker_flavor:
         clipos_fromscratch_on_reference_builder = builder
-    clipos_fromscratch_builders.append(builder)
+    clipos_on_all_flavors_builders.append(builder)
 
-clipos_incremental_on_reference_builder = util.BuilderConfig(
-    name='clipos incremental env:{}'.format(reference_worker_flavor),
-    tags=['clipos', 'incremental-build',
-          'docker-env:{}'.format(reference_worker_flavor)],
-    workernames=[
-        worker.name for worker in all_clipos_docker_latent_workers
-        if worker.flavor == reference_worker_flavor and worker.privileged
-    ],
+clipos_builder = util.BuilderConfig(
+    name='clipos',
+    tags=['clipos', 'docker-env:{}'.format(reference_worker_flavor)],
+    workernames=[w.name for w in privileged_reference_workers],
     factory=clipos.build_factories.ClipOsProductBuildBuildFactory(
         # Pass on the buildmaster setup settings
         buildmaster_setup=setup,
     ),
 )
 
-clipos_docs_on_reference_builder = util.BuilderConfig(
-    name='clipos-docs env:{}'.format(reference_worker_flavor),
+clipos_docs_builder = util.BuilderConfig(
+    name='clipos-docs',
     tags=['clipos-docs', 'docker-env:{}'.format(reference_worker_flavor)],
-    workernames=[
-        worker.name for worker in all_clipos_docker_latent_workers
-        if worker.flavor == reference_worker_flavor and not worker.privileged
-    ],
+    workernames=[w.name for w in unprivileged_reference_workers],
     factory=clipos.build_factories.ClipOsProductDocumentationBuildBuildFactory(
-        # Pass on the buildmaster setup settings
-        buildmaster_setup=setup,
-    ),
-)
-
-# Customizable build for CLIP OS
-customizable_clipos_builder = util.BuilderConfig(
-    name='clipos custom env:{}'.format(reference_worker_flavor),
-    tags=['clipos', 'custom', 'docker-env:{}'.format(reference_worker_flavor)],
-    workernames=[
-        worker.name for worker in all_clipos_docker_latent_workers
-        if worker.flavor == reference_worker_flavor and worker.privileged
-    ],
-    factory=clipos.build_factories.ClipOsProductBuildBuildFactory(
         # Pass on the buildmaster setup settings
         buildmaster_setup=setup,
     ),
@@ -235,17 +223,12 @@ c['builders'] = [
     repo_sync_builder,
 
     # CLIP OS build from scratch
-    *clipos_fromscratch_builders,
+    *clipos_on_all_flavors_builders,
 
-    # CLIP OS incremental build from the prebuild artifacts from the "from
-    # scratch" identical build
-    clipos_incremental_on_reference_builder,
+    clipos_builder,
 
     # Docs build
-    clipos_docs_on_reference_builder,
-
-    # Fully customizable CLIP OS builder
-    customizable_clipos_builder,
+    clipos_docs_builder,
 ]
 
 
@@ -256,12 +239,28 @@ c['builders'] = [
 # Configure the Schedulers, which decide how to react to incoming changes.
 #
 
+repo_sync_nightly_sched = schedulers.Nightly(
+    name='repo-sync-nightly-update',
+    builderNames=[
+        repo_sync_builder.name,
+    ],
+    dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
+    hour=0, minute=0,  # at 00:00
+    codebases={"": {
+        "repository": setup.clipos_manifest_git_url,
+        "branch": "master",
+    }},
+    properties={
+        "cleanup_workspace": True,
+    },
+)
+
 # CLIP OS builds schedulers:
 clipos_incremental_build_intraday_sched = schedulers.Nightly(
     name='clipos-master-intraday-incremental-build',
     builderNames=[
-        clipos_incremental_on_reference_builder.name,
-        clipos_docs_on_reference_builder.name,
+        clipos_builder.name,
+        clipos_docs_builder.name,
     ],
     dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
     hour=12, minute=30,  # at 12:30 (i.e. during lunch)
@@ -282,8 +281,8 @@ clipos_incremental_build_intraday_sched = schedulers.Nightly(
 clipos_build_nightly_sched = schedulers.Nightly(
     name='clipos-master-nightly-build',
     builderNames=[
-        clipos_fromscratch_on_reference_builder.name,
-        clipos_docs_on_reference_builder.name,
+        clipos_builder.name,
+        clipos_docs_builder.name,
     ],
     dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
     hour=0, minute=45,  # at 00:45
@@ -300,26 +299,10 @@ clipos_build_nightly_sched = schedulers.Nightly(
     },
 )
 
-repo_sync_nightly_sched = schedulers.Nightly(
-    name='repo-sync-nightly-update',
-    builderNames=[
-        repo_sync_builder.name,
-    ],
-    dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
-    hour=0, minute=0,  # at 00:00
-    codebases={"": {
-        "repository": setup.clipos_manifest_git_url,
-        "branch": "master",
-    }},
-    properties={
-        "cleanup_workspace": True,
-    },
-)
-
 clipos_build_weekly_sched = schedulers.Nightly(
     name='clipos-master-weekly-build',
     builderNames=[
-        *(builder.name for builder in clipos_fromscratch_builders),
+        *(builder.name for builder in clipos_on_all_flavors_builders),
     ],
     dayOfWeek='6',  # on Saturdays
     hour=12, minute=0,  # at noon
@@ -329,7 +312,7 @@ clipos_build_weekly_sched = schedulers.Nightly(
     }},
     properties={
         "cleanup_workspace": True,
-        "force_repo_quicksync_artifacts_download": False,
+        "force_repo_quicksync_artifacts_download": True,
         "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
 
         "reuse_sdks_artifact": False,
@@ -351,16 +334,6 @@ docker_buildenv_image_rebuild_weekly_sched = schedulers.Nightly(
     }},
 )
 
-# FIXME, TODO: Scheduler that tracks the branch evolution from the
-# change_source declarations below:
-#tobedone_sched = schedulers.SingleBranchScheduler(
-#    name='all',
-#    change_filter=util.ChangeFilter(branch='master'),
-#    treeStableTimer=None,
-#    builderNames=[
-#       # TODO
-#    ],
-#)
 
 # Force rebuild Docker images
 docker_buildenv_image_rebuild_force_sched = schedulers.ForceScheduler(
@@ -407,9 +380,9 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
     buttonName="Start a custom build",
     label="Custom build",
     builderNames=[
-        # All the builders that build a CLIP OS image:
-        *(builder.name for builder in c['builders']
-          if 'clipos' in builder.tags or 'clipos-docs' in builder.tags),
+        *[b.name for b in clipos_on_all_flavors_builders],
+        clipos_builder.name,
+        clipos_docs_builder.name,
     ],
     codebases = [
         util.CodebaseParameter(
@@ -499,13 +472,10 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
                         name="buildername_providing_sdks_artifact",
                         label="Builder name from which retrieving SDKs artifact (latest artifacts will be used)",
                         choices=[
-                            # All the builders that build a CLIP OS image from
-                            # scratch:
-                            *(builder.name for builder in c['builders']
-                              if ('clipos' in builder.tags and
-                                  'from-scratch' in builder.tags))
+                            clipos_builder.name,
+                            *[b.name for b in clipos_on_all_flavors_builders],
                         ],
-                        default=clipos_fromscratch_on_reference_builder.name,
+                        default=clipos_builder.name,
                     ),
                 ],
             ),
