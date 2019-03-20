@@ -736,7 +736,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             description=line("""extract the SDK artifact archive in the current
                              working tree"""),
             haltOnFailure=True,
-            doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifact")),
+            doStepIf=lambda step: not bool(step.getProperty("reuse_sdks_artifact")),
             command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
                 r"""
                 set -e -u -o pipefail
@@ -762,7 +762,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             name="save sdk artifact on buildmaster",
             description="save the SDK artifact archive on the buildmaster",
             haltOnFailure=True,
-            doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifact")),
+            doStepIf=lambda step: not bool(step.getProperty("reuse_sdks_artifact")),
             workersrcs=[
                 self.SDKS_ARTIFACT_FILENAME,
             ],
@@ -778,7 +778,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
         self.addStep(steps.MasterShellCommand(
             name="symlink latest artifacts location on buildmaster",
             haltOnFailure=True,
-            doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifact")),
+            doStepIf=lambda step: not bool(step.getProperty("reuse_sdks_artifact")),
             command=[
                 "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
                 compute_artifact_path_or_url(
