@@ -28,6 +28,7 @@ from .commons import line  # utility functions and stuff
 
 
 def compute_artifact_path_or_url(base_path_or_url: str,
+                                 artifact_type: str,
                                  buildername_property_name: str,
                                  *path_items: str,
                                  buildnumber_shard: Union[bool, str] = False):
@@ -51,11 +52,12 @@ def compute_artifact_path_or_url(base_path_or_url: str,
                 buildnumber = buildnumber_shard
             else:
                 raise ValueError("buildnumber_shard is of unexpected type")
-            return os.path.join(base_path_or_url, sanitized_buildername,
-                                buildnumber, *path_items)
-        else:
-            return os.path.join(base_path_or_url, sanitized_buildername,
+            return os.path.join(base_path_or_url, artifact_type,
+                                sanitized_buildername, buildnumber,
                                 *path_items)
+        else:
+            return os.path.join(base_path_or_url, artifact_type,
+                                sanitized_buildername, *path_items)
     return renderable
 
 
@@ -514,6 +516,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
         if self.buildmaster_setup.artifacts_base_url:
             artifacts_url_for_buildername = compute_artifact_path_or_url(
                 self.buildmaster_setup.artifacts_base_url,
+                "quicksync-artifacts",
                 "buildername",
                 buildnumber_shard=True,
             )
@@ -529,6 +532,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
             ],
             masterdest=compute_artifact_path_or_url(
                 self.buildmaster_setup.artifacts_dir,
+                "quicksync-artifacts",
                 "buildername",
                 buildnumber_shard=True,
             ),
@@ -543,6 +547,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
                 "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
                 compute_artifact_path_or_url(
                     self.buildmaster_setup.artifacts_dir,
+                    "quicksync-artifacts",
                     "buildername",
                     buildnumber_shard="latest",
                 ),
@@ -592,6 +597,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
             doStepIf=is_artifact_download_required("repo-dir"),
             mastersrc=compute_artifact_path_or_url(
                 self.buildmaster_setup.artifacts_dir,
+                "quicksync-artifacts",
                 'buildername_providing_repo_quicksync_artifacts',
                 self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
                 buildnumber_shard="latest",
@@ -606,6 +612,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
             doStepIf=is_artifact_download_required("git-lfs-dirs"),
             mastersrc=compute_artifact_path_or_url(
                 self.buildmaster_setup.artifacts_dir,
+                "quicksync-artifacts",
                 'buildername_providing_repo_quicksync_artifacts',
                 self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
                 buildnumber_shard="latest",
@@ -701,6 +708,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifact")),
             mastersrc=compute_artifact_path_or_url(
                 self.buildmaster_setup.artifacts_dir,
+                "sdks",
                 "buildername_providing_sdks_artifact",
                 self.SDKS_ARTIFACT_FILENAME,
                 buildnumber_shard="latest",
@@ -755,6 +763,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
         if self.buildmaster_setup.artifacts_base_url:
             artifacts_url_for_buildername = compute_artifact_path_or_url(
                 self.buildmaster_setup.artifacts_base_url,
+                "sdks",
                 "buildername",
                 buildnumber_shard=True,
             )
@@ -768,6 +777,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             ],
             masterdest=compute_artifact_path_or_url(
                 self.buildmaster_setup.artifacts_dir,
+                "sdks",
                 "buildername",
                 buildnumber_shard=True,
             ),
@@ -783,6 +793,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
                 "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
                 compute_artifact_path_or_url(
                     self.buildmaster_setup.artifacts_dir,
+                    "sdks",
                     "buildername",
                     buildnumber_shard="latest",
                 ),
@@ -804,11 +815,13 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             workersrc="out/doc/_build",
             masterdest=compute_artifact_path_or_url(
                 self.buildmaster_setup.artifacts_dir,
+                "docs",
                 "buildername",
                 buildnumber_shard=True,
             ),
             url=compute_artifact_path_or_url(
                 self.buildmaster_setup.artifacts_base_url,
+                "docs",
                 "buildername",
                 buildnumber_shard=True,
             )
@@ -821,6 +834,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
                 "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
                 compute_artifact_path_or_url(
                     self.buildmaster_setup.artifacts_dir,
+                    "docs",
                     "buildername",
                     buildnumber_shard="latest",
                 ),
