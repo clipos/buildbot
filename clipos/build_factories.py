@@ -655,9 +655,7 @@ class RepoSyncFromScratchAndArchive(ClipOsSourceTreeBuildFactoryBase):
         super().__init__(**kwargs)
 
         self.cleanupWorkspaceIfRequested(keep_artifacts=False)
-
         self.syncSources(use_repo_quicksync_artifacts=False)  # i.e. from scratch
-
         self.produceAndUploadSourceTreeQuicksyncArtifacts()
 
 
@@ -872,13 +870,9 @@ class ClipOsProductBuildBuildFactory(ClipOsToolkitEnvironmentBuildFactoryBase):
         super().__init__(**kwargs)
 
         self.cleanupWorkspaceIfRequested(keep_artifacts=True)
-
         self.syncSources(use_repo_quicksync_artifacts=True)
-
         self.cleanCosmkDirectories()
-
         self.downloadExtractSdksOrBootstrapUploadSdks()
-
         self.buildAll()
 
 
