@@ -176,8 +176,11 @@ repo_sync_builder = util.BuilderConfig(
 # CLIP OS complete build on all the Docker latent worker flavors:
 clipos_on_all_flavors_builders = []
 for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
+    builder_name = "clipos"
+    if flavor != reference_worker_flavor:
+        builder_name += ' env:{}'.format(flavor)
     builder = util.BuilderConfig(
-        name='clipos env:{}'.format(flavor),
+        name=builder_name,
         tags=['clipos', 'docker-env:{}'.format(flavor)],
         workernames=[
             worker.name for worker in all_clipos_docker_latent_workers
@@ -193,16 +196,6 @@ for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
     if flavor == reference_worker_flavor:
         clipos_fromscratch_on_reference_builder = builder
     clipos_on_all_flavors_builders.append(builder)
-
-clipos_builder = util.BuilderConfig(
-    name='clipos',
-    tags=['clipos', 'docker-env:{}'.format(reference_worker_flavor)],
-    workernames=[w.name for w in privileged_reference_workers],
-    factory=clipos.build_factories.ClipOsProductBuildBuildFactory(
-        # Pass on the buildmaster setup settings
-        buildmaster_setup=setup,
-    ),
-)
 
 clipos_docs_builder = util.BuilderConfig(
     name='clipos-docs',
