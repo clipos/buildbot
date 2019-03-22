@@ -421,13 +421,24 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
                         label="Local manifest to apply changes to the source tree",
                         default=r"""
 <manifest>
-  <!-- This is an example of a local-manifest file: tweak it to your needs. -->
+  <!--
+    This is an example of a local-manifest file: tweak it to your needs.
+    You can find examples below that use dummy values and that illustrate the
+    operations you may want to do with such a local-manifest file:
+  -->
 
-  <remote name="dummyremote" fetch="https://github.com/dummy" />
+  <!-- How to declare an additional Git remote you can use futher down: -->
+  <remote name="foobaros-github" fetch="https://github.com/foobaros" />
 
-  <remove-project name="src_external_uselesscomponent" />
+  <!-- How to remove from the source tree a useless item: -->
+  <remove-project name="src_external_uselessproject" />
 
-  <project path="products/dummyos" name="products_dummyos" remote="dummyremote" revision="refs/changes/42/1342" />
+  <!-- How to declare and checkout a new item in the source tree: -->
+  <project path="products/foobaros" name="products_foobaros" remote="foobaros-github" revision="refs/changes/42/1342/7" />
+
+  <!-- How to change the checkout properties of an existing source tree item: -->
+  <remove-project name="src_portage_clipos" />
+  <project path="src/portage/clipos" name="src_portage_clipos" revision="refs/changes/37/1337/2" />
 </manifest>
                         """.strip(),
                         cols=80, rows=6,
