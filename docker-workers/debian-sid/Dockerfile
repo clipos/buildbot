@@ -29,7 +29,8 @@ RUN apt-get -y -q --no-install-recommends install \
         python3 python3-venv python3-dev build-essential pkg-config \
         bash sudo util-linux squashfs-tools coreutils locales \
         cargo \
-        runc qemu libvirt-dev libvirt-daemon
+        runc qemu libvirt-dev libvirt-daemon \
+        libarchive-tools
 
 # [BUILDBOT-SPECIFIC] Installs pip in order to be able to install the
 # buildbot-worker:
