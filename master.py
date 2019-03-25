@@ -194,12 +194,34 @@ for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
     # Keep a reference on the reference builder environment for the nightly
     # scheduler:
     if flavor == reference_worker_flavor:
-        clipos_fromscratch_on_reference_builder = builder
+        reference_clipos_builder = builder
     clipos_on_all_flavors_builders.append(builder)
 
 clipos_docs_builder = util.BuilderConfig(
     name='clipos-docs',
     tags=['clipos-docs', 'docker-env:{}'.format(reference_worker_flavor)],
+    workernames=[w.name for w in unprivileged_reference_workers],
+    factory=clipos.build_factories.ClipOsProductDocumentationBuildBuildFactory(
+        # Pass on the buildmaster setup settings
+        buildmaster_setup=setup,
+    ),
+)
+
+clipos_ondemand_builder = util.BuilderConfig(
+    name='clipos ondemand',
+    tags=['clipos', 'on-demand',
+          'docker-env:{}'.format(reference_worker_flavor)],
+    workernames=[w.name for w in privileged_reference_workers],
+    factory=clipos.build_factories.ClipOsProductBuildBuildFactory(
+        # Pass on the buildmaster setup settings
+        buildmaster_setup=setup,
+    ),
+)
+
+clipos_docs_ondemand_builder = util.BuilderConfig(
+    name='clipos-docs ondemand',
+    tags=['clipos-docs', 'on-demand',
+          'docker-env:{}'.format(reference_worker_flavor)],
     workernames=[w.name for w in unprivileged_reference_workers],
     factory=clipos.build_factories.ClipOsProductDocumentationBuildBuildFactory(
         # Pass on the buildmaster setup settings
@@ -215,13 +237,13 @@ c['builders'] = [
     # Repo sync test
     repo_sync_builder,
 
-    # CLIP OS build from scratch
-    *clipos_on_all_flavors_builders,
+    # CLIP OS builds from scratch
+    *clipos_on_all_flavors_builders,   # CLIP OS images
+    clipos_docs_builder,               # CLIP OS docs
 
-    clipos_builder,
-
-    # Docs build
-    clipos_docs_builder,
+    # CLIP OS builds on demand
+    clipos_ondemand_builder,           # CLIP OS images
+    clipos_docs_ondemand_builder,      # CLIP OS docs
 ]
 
 
@@ -252,7 +274,7 @@ repo_sync_nightly_sched = schedulers.Nightly(
 clipos_incremental_build_intraday_sched = schedulers.Nightly(
     name='clipos-master-intraday-incremental-build',
     builderNames=[
-        clipos_builder.name,
+        reference_clipos_builder.name,
         clipos_docs_builder.name,
     ],
     dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
@@ -266,15 +288,22 @@ clipos_incremental_build_intraday_sched = schedulers.Nightly(
         "force_repo_quicksync_artifacts_download": False,
         "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
 
-        "reuse_sdks_artifact": True,
-        "buildername_providing_sdks_artifact": clipos_fromscratch_on_reference_builder.name,
+        "produce_sdks_artifacts": False,
+        "reuse_sdks_artifacts": True,
+        "buildername_providing_sdks_artifacts": reference_clipos_builder.name,
+
+        "produce_cache_artifacts": False,
+        "reuse_cache_artifacts": True,
+        "buildername_providing_cache_artifacts": reference_clipos_builder.name,
+
+        "produce_build_artifacts": True,
     },
 )
 
 clipos_build_nightly_sched = schedulers.Nightly(
     name='clipos-master-nightly-build',
     builderNames=[
-        clipos_builder.name,
+        reference_clipos_builder.name,
         clipos_docs_builder.name,
     ],
     dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
@@ -288,7 +317,13 @@ clipos_build_nightly_sched = schedulers.Nightly(
         "force_repo_quicksync_artifacts_download": False,
         "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
 
-        "reuse_sdks_artifact": False,
+        "produce_sdks_artifacts": True,
+        "reuse_sdks_artifacts": False,
+
+        "produce_cache_artifacts": True,
+        "reuse_cache_artifacts": False,
+
+        "produce_build_artifacts": True,
     },
 )
 
@@ -308,7 +343,13 @@ clipos_build_weekly_sched = schedulers.Nightly(
         "force_repo_quicksync_artifacts_download": True,
         "buildername_providing_repo_quicksync_artifacts": repo_sync_builder.name,
 
-        "reuse_sdks_artifact": False,
+        "produce_sdks_artifacts": True,
+        "reuse_sdks_artifacts": False,
+
+        "produce_cache_artifacts": True,
+        "reuse_cache_artifacts": False,
+
+        "produce_build_artifacts": True,
     },
 )
 
@@ -373,9 +414,8 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
     buttonName="Start a custom build",
     label="Custom build",
     builderNames=[
-        *[b.name for b in clipos_on_all_flavors_builders],
-        clipos_builder.name,
-        clipos_docs_builder.name,
+        clipos_ondemand_builder.name,
+        clipos_docs_ondemand_builder.name,
     ],
     codebases = [
         util.CodebaseParameter(
@@ -452,7 +492,7 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
                 fields=[
                     util.BooleanParameter(
                         name="cleanup_workspace",
-                        label="Clean up the workspace beforehand",
+                        label="Clean up the workspace beforehand (strongly advised)",
                         default=True,
                     ),
                     util.BooleanParameter(
@@ -466,20 +506,50 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
             util.NestedParameter(name="",
                 label="CLIP OS build process options",
                 layout="vertical",
+                columns=1,
                 fields=[
                     util.BooleanParameter(
-                        name="reuse_sdks_artifact",
+                        name="produce_sdks_artifacts",
+                        label="Produce SDKs artifacts and upload them on the buildmaster",
+                        default=False,
+                    ),
+                    util.BooleanParameter(
+                        name="reuse_sdks_artifacts",
                         label="Reuse SDKs artifacts instead of bootstrapping SDKs from scratch",
                         default=True,
                     ),
                     util.ChoiceStringParameter(
-                        name="buildername_providing_sdks_artifact",
+                        name="buildername_providing_sdks_artifacts",
                         label="Builder name from which retrieving SDKs artifact (latest artifacts will be used)",
                         choices=[
-                            clipos_builder.name,
                             *[b.name for b in clipos_on_all_flavors_builders],
                         ],
-                        default=clipos_builder.name,
+                        default=reference_clipos_builder.name,
+                    ),
+
+                    util.BooleanParameter(
+                        name="produce_cache_artifacts",
+                        label="Produce cache artifacts (binary packages, etc.) and upload them on the buildmaster",
+                        default=False,
+                    ),
+                    util.BooleanParameter(
+                        name="reuse_cache_artifacts",
+                        label="Reuse cache artifacts instead of bootstrapping SDKs from scratch",
+                        default=True,
+                    ),
+                    util.ChoiceStringParameter(
+                        name="buildername_providing_cache_artifacts",
+                        label="Builder name from which retrieving cache artifact (latest artifacts will be used)",
+                        choices=[
+                            *[b.name for b in clipos_on_all_flavors_builders],
+                        ],
+                        default=reference_clipos_builder.name,
+                    ),
+
+                    util.BooleanParameter(
+                        name="produce_build_artifacts",
+                        label="Produce build result artifacts and upload them on the buildmaster",
+                        default=False,
                     ),
                 ],
             ),

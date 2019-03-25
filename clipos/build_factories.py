@@ -138,7 +138,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
 
         self.buildmaster_setup = buildmaster_setup  # Buildbot setup settings
 
-    def cleanupWorkspaceIfRequested(self, keep_artifacts=False):
+    def cleanupWorkspaceIfRequested(self):
         """Cleanup the workspace if this is requested via the build property
         "cleanup_workspace"."""
 
@@ -475,7 +475,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
             description=line('''archive the ".repo" directory to serve as an
                              artifact for quicker synchronizations'''),
             haltOnFailure=True,
-            command=["tar", "-cvf", self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
+            command=["bsdtar", "-cvf", self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
                      ".repo"],
         ))
 
@@ -502,7 +502,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
                 done
 
                 # Archive them
-                tar -cvf "${ARTIFACT_FILENAME:?}" "${git_lfs_paths[@]}"
+                bsdtar -cvf "${ARTIFACT_FILENAME:?}" "${git_lfs_paths[@]}"
                 """).strip()],
             env={
                 "ARTIFACT_FILENAME": self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
@@ -559,7 +559,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
         builder directory output into the builder workspace."""
 
         self.addStep(steps.SetPropertyFromCommand(
-            name="assert which artifact download is required",
+            name="assert which quicksync artifact download is required"[:50],
             property="which_repo_quicksync_artifact_to_download",
             doStepIf=lambda step: not bool(step.getProperty("force_repo_quicksync_artifacts_download")),
             command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
@@ -575,19 +575,20 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
                 echo "${to_download[@]}"
                 """).strip()],
             haltOnFailure=False,
+            warnOnFailure=True,
             env={
                 "REPO_DIR_ARCHIVE_ARTIFACT_FILENAME": self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
                 "GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME": self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
             },
         ))
 
-        def is_artifact_download_required(artifact_type):
+        def is_artifact_download_required(quicksync_artifact_type):
             def checker(step: BuildStep) -> bool:
                 return (
                     bool(step.getProperty("force_repo_quicksync_artifacts_download")) or
-                    (artifact_type in
-                     step.getProperty("which_repo_quicksync_artifact_to_download").split()
-                    ))
+                    (quicksync_artifact_type in
+                     str(step.getProperty("which_repo_quicksync_artifact_to_download")).split())
+                )
             return checker
 
         self.addStep(steps.FileDownload(
@@ -629,7 +630,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
             description=line("""extract the ".repo" directory archive artifact
                              in the current working tree"""),
             haltOnFailure=True,
-            command=["tar", "-xvf", self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME],
+            command=["bsdtar", "-xvf", self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME],
         ))
 
     def _extractGitLfsArtifact(self):
@@ -641,7 +642,7 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
             description=line("""extract the ".git/lfs" directories archive
                              artifact in the current working tree"""),
             haltOnFailure=True,
-            command=["tar", "-xvf",
+            command=["bsdtar", "-xvf",
                      self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME],
         ))
 
@@ -654,7 +655,7 @@ class RepoSyncFromScratchAndArchive(ClipOsSourceTreeBuildFactoryBase):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.cleanupWorkspaceIfRequested(keep_artifacts=False)
+        self.cleanupWorkspaceIfRequested()
         self.syncSources(use_repo_quicksync_artifacts=False)  # i.e. from scratch
         self.produceAndUploadSourceTreeQuicksyncArtifacts()
 
@@ -663,142 +664,173 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
     """Build factory base for build factory that need to make use of the CLIP
     OS toolkit (e.g. when building CLIP OS images)."""
 
-    SDKS_ARTIFACT_FILENAME = "sdks.tar"
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def cleanCosmkDirectories(self, *,
-                              build_dir: bool = True,
-                              cache_dir: bool = True,
-                              runtime_dir: bool = True):
-        dirs = []
-        if build_dir:
-            dirs.append("out")
-        if cache_dir:
-            dirs.append("cache")
-        if runtime_dir:
-            dirs.append("run")
-        if not dirs:
-            return
+    def cleanupExpectedOutputLocations(self):
         self.addStep(steps.ShellCommand(
-            name="remove selected cosmk-managed dirs",
+            name="cleanup pre-existing directories awaiting output",
             haltOnFailure=True,
-            command=r"sudo rm -rf {}".format(" ".join(map(shlex.quote, dirs))),
+            command=r"sudo rm -rf out cache run artifacts",
         ))
 
-    def downloadExtractSdksOrBootstrapUploadSdks(self):
-        """Try to retrieve the SDKs artifact from the builder artifacts (whose
-        name is specified in the property
-        ``buildername_providing_sdks_artifact``) or bootstrap the SDKs."""
-
-        self.downloadAndExtractSdksArtifact()
-        self.bootstrapSdks()
-        self.produceAndUploadSdksArtifact()
-
-    def downloadAndExtractSdksArtifact(self):
-        self.addStep(steps.FileDownload(
-            name="retrieve sdk artifacts",
-            description=line(
-                """retrieve the SDKs artifact from the appropriate buildername
-                artifacts output on buildmaster"""),
-            haltOnFailure=True,
-            doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifact")),
-            mastersrc=compute_artifact_path_or_url(
-                self.buildmaster_setup.artifacts_dir,
-                "sdks",
-                "buildername_providing_sdks_artifact",
-                self.SDKS_ARTIFACT_FILENAME,
-                buildnumber_shard="latest",
-            ),
-            workerdest=self.SDKS_ARTIFACT_FILENAME,
-        ))
-        self.addStep(steps.ShellCommand(
-            name="extract sdk artifact archive",
-            description=line("""extract the SDK artifact archive in the current
-                             working tree"""),
-            haltOnFailure=True,
-            doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifact")),
-            command=["tar", "-xvf", self.SDKS_ARTIFACT_FILENAME],
-        ))
-
-    def bootstrapSdks(self):
-        all_steps_cmds = [
-            ("cosmk", "bootstrap", "clipos/sdk"),
-            ("cosmk", "bootstrap", "clipos/sdk_debian"),
-        ]
-        for step_cmd in all_steps_cmds:
-            self.addStep(clipos.steps.ToolkitEnvironmentShellCommand(
-                # Cut out the step name as it must be lower than 50 chars:
-                name=str(" ".join(step_cmd))[:50],
+    def _getRequestedArtifactsFromBuildmaster(self, sdks: List[str],
+                                              cache: List[str]):
+        for recipe in sdks:
+            product_name, recipe_name = recipe.split('/')
+            sdk_recipe_artifact_archive = "sdk:{}.{}.tar".format(product_name, recipe_name)
+            self.addStep(steps.FileDownload(
+                name="retrieve {} SDK artifact".format(recipe)[:50],
+                description=line(
+                    """retrieve the SDK artifact for \"{}/{}\" from the
+                    appropriate builder artifacts output on
+                    buildmaster""").format(product_name, recipe_name),
                 haltOnFailure=True,
-                doStepIf=lambda step: not bool(step.getProperty("reuse_sdks_artifact")),
-                command=step_cmd,
+                doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifacts")),
+                mastersrc=compute_artifact_path_or_url(
+                    self.buildmaster_setup.artifacts_dir,
+                    "sdks",
+                    "buildername_providing_sdks_artifacts",
+                    sdk_recipe_artifact_archive,
+                    buildnumber_shard="latest",
+                ),
+                workerdest=sdk_recipe_artifact_archive,
             ))
 
-    def produceAndUploadSdksArtifact(self):
-        self.addStep(steps.ShellCommand(
-            name="archive sdk artifact archive",
-            description=line("""extract the SDK artifact archive in the current
-                             working tree"""),
-            haltOnFailure=True,
-            doStepIf=lambda step: not bool(step.getProperty("reuse_sdks_artifact")),
+        for recipe in cache:
+            product_name, recipe_name = recipe.split('/')
+            cache_recipe_artifact_archive = "cache:{}.{}.tar".format(product_name, recipe_name)
+            self.addStep(steps.FileDownload(
+                name="retrieve {} cache artifact".format(recipe)[:50],
+                description=line(
+                    """retrieve the cache artifact for \"{}/{}\" from the
+                    appropriate builder artifacts output on
+                    buildmaster""").format(product_name, recipe_name),
+                haltOnFailure=True,
+                doStepIf=lambda step: bool(step.getProperty("reuse_cache_artifacts")),
+                mastersrc=compute_artifact_path_or_url(
+                    self.buildmaster_setup.artifacts_dir,
+                    "cache",
+                    "buildername_providing_cache_artifacts",
+                    cache_recipe_artifact_archive,
+                    buildnumber_shard="latest",
+                ),
+                workerdest=cache_recipe_artifact_archive,
+            ))
+
+    def buildProduct(self, product_name: str):
+        if product_name != 'clipos':
+            raise NotImplementedError("Only \"clipos\" product is supported for the moment.")
+
+        self.cleanupExpectedOutputLocations()
+        self._getRequestedArtifactsFromBuildmaster(
+            sdks=['clipos/sdk', 'clipos/sdk_debian'],
+            cache=['clipos/core', 'clipos/efiboot'],
+        )
+        current_location = os.path.dirname(os.path.realpath(__file__))
+        with open(os.path.join(current_location, "scripts/complete-build.sh"),
+                  "r") as scriptfile:
+            self.addStep(clipos.steps.ToolkitEnvironmentShellCommand(
+                name="complete build",
+                haltOnFailure=False,
+                warnOnFailure=True,
+                flunkOnFailure=True,
+                command=scriptfile.read(),
+                env={
+                    "produce_sdks_artifacts": util.Interpolate("%(prop:produce_sdks_artifacts:#?|1|0)s"),
+                    "reuse_sdks_artifacts": util.Interpolate("%(prop:reuse_sdks_artifacts:#?|1|0)s"),
+                    "produce_cache_artifacts": util.Interpolate("%(prop:produce_cache_artifacts:#?|1|0)s"),
+                    "reuse_cache_artifacts": util.Interpolate("%(prop:reuse_cache_artifacts:#?|1|0)s"),
+                    "produce_build_artifacts": util.Interpolate("%(prop:produce_build_artifacts:#?|1|0)s"),
+                },
+            ))
+        self._identifyAndSaveProducedArtifactsOntoBuildmaster()
+
+    def _identifyAndSaveProducedArtifactsOntoBuildmaster(self):
+        self.addStep(steps.SetPropertyFromCommand(
+            name="assert which artifact have been produced",
+            property="artifacts_produced",
             command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
                 r"""
                 set -e -u -o pipefail
+                artifacts_produced=()  # which artifact have been produced
 
-                # Create the archive
-                > "${artifact_filename}"
-                find cache -type d -regex 'cache/clipos/[^/]+/sdk[^/]*' \
-                    -exec tar -rvf "${artifact_filename}" {} \;
+                for type in sdks cache build; do
+                    if [[ -d "artifacts/${type}" &&
+                          -n "$(ls -A "artifacts/${type}")" ]]; then
+                        artifacts_produced+=("${type}")
+                    fi
+                done
+
+                echo "${artifacts_produced[@]}"
                 """).strip()],
-            env={
-                "artifact_filename": self.SDKS_ARTIFACT_FILENAME,
-            },
+            haltOnFailure=False,
+            warnOnFailure=True,
         ))
 
-        artifacts_url_for_buildername = None
-        if self.buildmaster_setup.artifacts_base_url:
-            artifacts_url_for_buildername = compute_artifact_path_or_url(
-                self.buildmaster_setup.artifacts_base_url,
-                "sdks",
-                "buildername",
-                buildnumber_shard=True,
-            )
-        self.addStep(steps.MultipleFileUpload(
-            name="save sdk artifact on buildmaster",
-            description="save the SDK artifact archive on the buildmaster",
-            haltOnFailure=True,
-            doStepIf=lambda step: not bool(step.getProperty("reuse_sdks_artifact")),
-            workersrcs=[
-                self.SDKS_ARTIFACT_FILENAME,
-            ],
-            masterdest=compute_artifact_path_or_url(
-                self.buildmaster_setup.artifacts_dir,
-                "sdks",
-                "buildername",
-                buildnumber_shard=True,
-            ),
-            mode=0o644,
-            keepstamp=True,
-            url=artifacts_url_for_buildername,
-        ))
-        self.addStep(steps.MasterShellCommand(
-            name="symlink latest artifacts location on buildmaster",
-            haltOnFailure=True,
-            doStepIf=lambda step: not bool(step.getProperty("reuse_sdks_artifact")),
-            command=[
-                "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
-                compute_artifact_path_or_url(
-                    self.buildmaster_setup.artifacts_dir,
-                    "sdks",
+        def is_artifact_save_necessary(artifact_type):
+            def checker(step: BuildStep) -> bool:
+                if artifact_type not in ['sdks', 'cache', 'build']:
+                    raise ValueError("is_artifact_save_necessary: Unsupported artifact type {!r}".format(artifact_type))
+                artifact_produced_property = "produce_{}_artifacts".format(artifact_type)
+                #print("DEBUG: {!r} property = {!r}".format(
+                #    artifact_produced_property, step.getProperty(artifact_produced_property)))
+                #print("DEBUG: {!r} property .split() = {!r}".format(
+                #    "artifacts_produced", str(step.getProperty("artifacts_produced")).split()))
+                #print("DEBUG: my boolean evaluation = {!r}".format(
+                #    bool(step.getProperty(artifact_produced_property)) and
+                #    (artifact_type in
+                #     str(step.getProperty("artifacts_produced")).split())
+                #))
+                return (
+                    bool(step.getProperty(artifact_produced_property)) and
+                    (artifact_type in
+                     str(step.getProperty("artifacts_produced")).split())
+                )
+            return checker
+
+        for artifact_type in ['sdks', 'cache', 'build']:
+            artifacts_url_for_buildername = None
+            if self.buildmaster_setup.artifacts_base_url:
+                artifacts_url_for_buildername = compute_artifact_path_or_url(
+                    self.buildmaster_setup.artifacts_base_url,
+                    artifact_type,
                     "buildername",
-                    buildnumber_shard="latest",
+                    buildnumber_shard=True,
+                )
+
+            self.addStep(steps.DirectoryUpload(
+                name="save {} artifact on buildmaster".format(artifact_type)[:50],
+                description="save the {} artifact archive on the buildmaster".format(artifact_type),
+                haltOnFailure=True,
+                doStepIf=is_artifact_save_necessary(artifact_type),
+                workersrc='artifacts/{}'.format(artifact_type),
+                masterdest=compute_artifact_path_or_url(
+                    self.buildmaster_setup.artifacts_dir,
+                    artifact_type,
+                    "buildername",
+                    buildnumber_shard=True,
                 ),
-            ],
-        ))
+                url=artifacts_url_for_buildername,
+            ))
+            self.addStep(steps.MasterShellCommand(
+                name="symlink latest {} artifacts".format(artifact_type)[:50],
+                haltOnFailure=True,
+                doStepIf=is_artifact_save_necessary(artifact_type),
+                command=[
+                    "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
+                    compute_artifact_path_or_url(
+                        self.buildmaster_setup.artifacts_dir,
+                        artifact_type,
+                        "buildername",
+                        buildnumber_shard="latest",
+                    ),
+                ],
+            ))
 
     def buildAndUploadDocs(self):
+        self.cleanupExpectedOutputLocations()
+
         self.addStep(clipos.steps.ToolkitEnvironmentShellCommand(
             name="build docs",
             haltOnFailure=True,
@@ -806,6 +838,14 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             command="build_doc.sh",
         ))
 
+        artifacts_url_for_buildername = None
+        if self.buildmaster_setup.artifacts_base_url:
+            artifacts_url_for_buildername = compute_artifact_path_or_url(
+                self.buildmaster_setup.artifacts_base_url,
+                "docs",
+                "buildername",
+                buildnumber_shard=True,
+            )
         self.addStep(steps.DirectoryUpload(
             name="save docs artifact on buildmaster",
             description="save the documentation artifact archive on the buildmaster",
@@ -839,29 +879,6 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             ],
         ))
 
-    def buildAll(self):
-        all_steps_cmds = [
-            ("cosmk", "build", "clipos/core"),
-            ("cosmk", "image", "clipos/core"),
-            ("cosmk", "configure", "clipos/core"),
-            ("cosmk", "bundle", "clipos/core"),
-
-            ("cosmk", "build", "clipos/efiboot"),
-            ("cosmk", "image", "clipos/efiboot"),
-            ("cosmk", "configure", "clipos/efiboot"),
-            ("cosmk", "bundle", "clipos/efiboot"),
-
-            ("cosmk", "bundle", "clipos/qemu"),
-        ]
-
-        for step_cmd in all_steps_cmds:
-            self.addStep(clipos.steps.ToolkitEnvironmentShellCommand(
-                # Cut out the step name as it must be lower than 50 chars:
-                name=str(" ".join(step_cmd))[:50],
-                haltOnFailure=True,
-                command=step_cmd,
-            ))
-
 
 class ClipOsProductBuildBuildFactory(ClipOsToolkitEnvironmentBuildFactoryBase):
     """Build factory to build CLIP OS product"""
@@ -869,11 +886,9 @@ class ClipOsProductBuildBuildFactory(ClipOsToolkitEnvironmentBuildFactoryBase):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.cleanupWorkspaceIfRequested(keep_artifacts=True)
+        self.cleanupWorkspaceIfRequested()
         self.syncSources(use_repo_quicksync_artifacts=True)
-        self.cleanCosmkDirectories()
-        self.downloadExtractSdksOrBootstrapUploadSdks()
-        self.buildAll()
+        self.buildProduct("clipos")
 
 
 class ClipOsProductDocumentationBuildBuildFactory(ClipOsToolkitEnvironmentBuildFactoryBase):
@@ -882,9 +897,8 @@ class ClipOsProductDocumentationBuildBuildFactory(ClipOsToolkitEnvironmentBuildF
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.cleanupWorkspaceIfRequested(keep_artifacts=True)
+        self.cleanupWorkspaceIfRequested()
         self.syncSources(use_repo_quicksync_artifacts=True)
-        self.cleanCosmkDirectories()
         self.buildAndUploadDocs()
 
 
