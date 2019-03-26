@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 # Copyright © 2019 ANSSI. All rights reserved.
 
-# Due to the quite long release cycle of Debian, we prefer to stick to Debian
-# sid (aka. unstable) as Debian stable or Debian testing often lag behind in
-# terms of package versions available:
-FROM debian:sid
+# According to Docker Hub, ubuntu:latest always points to the latest LTS
+# release of Ubuntu (i.e. as of 2019-03-26, this means Ubuntu 18.04).
+FROM ubuntu:latest
 
 # [BUILDBOT-SPECIFIC] Get buildbot-worker version to install to make it match
 # the one used by the master and the buildbot worker name to use for this
@@ -13,10 +12,6 @@ ARG BUILDBOT_WORKER_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
-
-# Enable contrib to get 'repo' from Debian APT repositories
-RUN grep -E '^deb .* sid main$' /etc/apt/sources.list &&\
-    sed -i -e 's/^deb .* sid main$/\0 contrib/' /etc/apt/sources.list
 
 # Gets rid of "(Reading database ... 5%" output.
 RUN echo 'Dpkg::Use-Pty "0";' > /etc/apt/apt.conf.d/00usepty
@@ -81,7 +76,7 @@ VOLUME /var/buildbot/worker/workspaces
 # [BUILDBOT-SPECIFIC] Sets metadata to show up in the Buildbot UI that
 # describes this worker:
 RUN mkdir -p info &&\
-    echo >info/host "Dockerized CLIP OS build environment based on Debian sid. Docker image generated on $(date --utc +%Y-%m-%dT%H:%M:%SZ)"
+    echo >info/host "Dockerized CLIP OS build environment based on latest Ubuntu LTS release. Docker image generated on $(date --utc +%Y-%m-%dT%H:%M:%SZ)"
 
 # [BUILDBOT-SPECIFIC] Sets the entrypoint to buildbot-worker and sets default
 # command line arguments to it:

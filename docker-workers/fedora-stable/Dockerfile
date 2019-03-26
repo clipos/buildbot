@@ -1,44 +1,43 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 # Copyright © 2019 ANSSI. All rights reserved.
 
-# Due to the quite long release cycle of Debian, we prefer to stick to Debian
-# sid (aka. unstable) as Debian stable or Debian testing often lag behind in
-# terms of package versions available:
-FROM debian:sid
+# According to Docker Hub, fedora:latest always points to the latest stable
+# release of Fedora (i.e. as of 2019-03-26, this means Fedora 29).
+FROM fedora:latest
 
 # [BUILDBOT-SPECIFIC] Get buildbot-worker version to install to make it match
 # the one used by the master and the buildbot worker name to use for this
 # image.
 ARG BUILDBOT_WORKER_VERSION
 
-ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 
-# Enable contrib to get 'repo' from Debian APT repositories
-RUN grep -E '^deb .* sid main$' /etc/apt/sources.list &&\
-    sed -i -e 's/^deb .* sid main$/\0 contrib/' /etc/apt/sources.list
-
-# Gets rid of "(Reading database ... 5%" output.
-RUN echo 'Dpkg::Use-Pty "0";' > /etc/apt/apt.conf.d/00usepty
-
-# Update both packages index and installed packages
-RUN apt-get -y -q update && apt-get -y -q --no-install-recommends upgrade
+# Upgrade already installed packages
+RUN dnf upgrade --assumeyes
 
 # Install all the required packages for this environment. See the section
 # related to the development environment setup in the CLIP OS project
 # documentation for the rationale behind every package:
-RUN apt-get -y -q --no-install-recommends install \
-        git git-lfs python2.7 gnupg2 repo \
-        python3 python3-venv python3-dev build-essential pkg-config \
-        bash sudo util-linux squashfs-tools coreutils locales \
-        cargo \
-        runc qemu libvirt-dev libvirt-daemon \
-        libarchive-tools
+RUN dnf install --assumeyes \
+        python2 python3-devel \
+        gnupg git git-lfs openssh-clients \
+        @development-tools \
+        runc sudo squashfs-tools \
+        qemu libvirt-devel libvirt-daemon \
+        rust cargo \
+        dumb-init \
+        bsdtar \
+    && dnf clean all
 
-# [BUILDBOT-SPECIFIC] Installs pip in order to be able to install the
-# buildbot-worker:
-RUN apt-get -y -q --no-install-recommends install \
-        build-essential python3-dev python3-setuptools python3-pip dumb-init
+# As repo is not packaged by Fedora, let's resort to the good old fetch from
+# Google servers (but verify at least the integrity of the downloaded binary):
+# The command below is inspired from the AOSP environment Dockerfile:
+#   https://android.googlesource.com/platform/build/+/master/tools/docker/Dockerfile
+# and has been updated with the latest SHA-256 checksum of repo 1.25:
+#   https://source.android.com/setup/build/downloading.
+RUN curl -o /usr/local/bin/repo 'https://storage.googleapis.com/git-repo-downloads/repo' &&\
+    echo "d06f33115aea44e583c8669375b35aad397176a411de3461897444d247b6c220  /usr/local/bin/repo" | sha256sum --strict -c - &&\
+    chmod a+x /usr/local/bin/repo
 
 # Create an unprivileged user:
 # [BUILDBOT-SPECIFIC] The name and the user's home directory location are
@@ -81,7 +80,7 @@ VOLUME /var/buildbot/worker/workspaces
 # [BUILDBOT-SPECIFIC] Sets metadata to show up in the Buildbot UI that
 # describes this worker:
 RUN mkdir -p info &&\
-    echo >info/host "Dockerized CLIP OS build environment based on Debian sid. Docker image generated on $(date --utc +%Y-%m-%dT%H:%M:%SZ)"
+    echo >info/host "Dockerized CLIP OS build environment based on latest Fedora stable release. Docker image generated on $(date --utc +%Y-%m-%dT%H:%M:%SZ)"
 
 # [BUILDBOT-SPECIFIC] Sets the entrypoint to buildbot-worker and sets default
 # command line arguments to it:

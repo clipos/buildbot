@@ -40,24 +40,14 @@ class DockerLatentWorker(buildbot.worker.docker.DockerLatentWorker):
             "docker_build_context": "docker-workers/debian-sid",
             "description": "Debian sid with a CLIP OS build environment",
         },
-
-        ## Those are disabled for the moment:
-        #"debian-buster": {
-        #    "docker_build_context": "docker-workers/debian-buster",
-        #    "description": "Debian buster (10) with a CLIP OS build environment",
-        #},
-        #"debian-stretch": {
-        #    "docker_build_context": "docker-workers/debian-stretch",
-        #    "description": "Debian stretch (9) with a CLIP OS build environment",
-        #},
-        #"fedora-28": {
-        #    "docker_build_context": "docker-workers/fedora-28",
-        #    "description": "Fedora 28 with a CLIP OS build environment",
-        #},
-        #"ubuntu-1804": {
-        #    "docker_build_context": "docker-workers/ubuntu-18.04",
-        #    "description": "Ubuntu 18.04 with a CLIP OS build environment",
-        #},
+        "fedora-stable": {
+            "docker_build_context": "docker-workers/fedora-stable",
+            "description": "Latest stable Fedora with a CLIP OS build environment",
+        },
+        "ubuntu-lts": {
+            "docker_build_context": "docker-workers/ubuntu-lts",
+            "description": "Latest Ubuntu LTS with a CLIP OS build environment",
+        },
     }
 
     # The basedir for the buildbot worker in the Docker container (see the
