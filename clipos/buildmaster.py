@@ -134,8 +134,16 @@ class SetupSettings(object):
                 # Web UI plugins potential settings:
                 'plugins': {
                     'waterfall_view': {},
-                    'console_view': {},
-                    'grid_view': {},
+                    # Useless for now:
+                    #'console_view': {},
+                    #'grid_view': {},
+                },
+
+                # Web UI custom configuration:
+                'ui_default_config': {
+                    'Waterfall.scaling_waterfall': 0.04,
+                    'Builders.show_old_builders': True,
+                    'Builders.show_workers_name': True,
                 },
 
                 # Authentication settings for the web UI and REST API:
