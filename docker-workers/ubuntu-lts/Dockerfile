@@ -25,7 +25,7 @@ RUN apt-get -y -q update && apt-get -y -q --no-install-recommends upgrade
 RUN apt-get -y -q --no-install-recommends install \
         git git-lfs python2.7 gnupg2 repo \
         python3 python3-venv python3-dev build-essential pkg-config \
-        bash sudo util-linux squashfs-tools coreutils locales \
+        bash sudo util-linux squashfs-tools coreutils diffutils locales \
         cargo \
         runc qemu libvirt-dev libvirt-daemon \
         libarchive-tools

@@ -14,6 +14,7 @@ set -x
 : "${reuse_cache_artifacts:?}"
 : "${produce_build_artifacts:?}"
 
+
 reuse-or-bootstrap_sdk() {
     local product_name="${1%/*}"
     local recipe_name="${1#*/}"
@@ -23,10 +24,12 @@ reuse-or-bootstrap_sdk() {
         cosmk bootstrap "${product_name:?}/${recipe_name:?}"
         if [[ "${produce_sdks_artifacts:-0}" -ne 0 ]]; then
             mkdir -p artifacts/sdks
-            bsdtar -cvf "artifacts/sdks/${artifact_name}" \
+            sudo bsdtar -cvpf "artifacts/sdks/${artifact_name}" \
                 "cache/${product_name?}/"*"/${recipe_name?}"
+            sudo chown "$UID:${GROUPS[0]}" "artifacts/sdks/${artifact_name}"
         fi
     else
+        sudo rm -rf "cache/${product_name?}/"*"/${recipe_name?}"
         bsdtar -xvf "${artifact_name}"
     fi
 }
@@ -37,6 +40,7 @@ build-image-configure_recipe() {
     local artifact_name="cache:${product_name:?}.${recipe_name:?}.tar"
 
     if [[ "${reuse_cache_artifacts:-0}" -ne 0 ]]; then
+        sudo rm -rf "cache/${product_name?}/"*"/${recipe_name?}"
         if [[ -f "${artifact_name}" ]]; then
             bsdtar -xvf "${artifact_name}"
         else
@@ -48,8 +52,9 @@ build-image-configure_recipe() {
 
     if [[ "${produce_cache_artifacts:-0}" -ne 0 ]]; then
         mkdir -p artifacts/cache
-        bsdtar -cvf "artifacts/cache/${artifact_name}" \
+        sudo bsdtar -cvpf "artifacts/cache/${artifact_name}" \
             "cache/${product_name?}/"*"/${recipe_name?}"
+        sudo chown "$UID:${GROUPS[0]}" "artifacts/cache/${artifact_name}"
     fi
 
     cosmk image "${product_name:?}/${recipe_name:?}"
@@ -65,8 +70,9 @@ bundle_recipe() {
 
     if [[ "${produce_build_artifacts:-0}" -ne 0 ]]; then
         mkdir -p artifacts/build
-        bsdtar -cvf "artifacts/build/${artifact_name}" \
+        sudo bsdtar -cvpf "artifacts/build/${artifact_name}" \
             "out/${product_name?}/"*"/${recipe_name?}/bundle"
+        sudo chown "$UID:${GROUPS[0]}" "artifacts/build/${artifact_name}"
     fi
 }
 
@@ -74,6 +80,9 @@ build-image-configure-bundle_recipe() {
     build-image-configure_recipe "${1:?}"
     bundle_recipe "${1:?}"
 }
+
+# Avoid leaving build results of previous run in out/:
+rm -rf out
 
 reuse-or-bootstrap_sdk clipos/sdk
 reuse-or-bootstrap_sdk clipos/sdk_debian

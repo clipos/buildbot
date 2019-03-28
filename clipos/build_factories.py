@@ -667,11 +667,11 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def cleanupExpectedOutputLocations(self):
+    def setupClipOsToolkit(self):
         self.addStep(steps.ShellCommand(
-            name="cleanup pre-existing directories awaiting output",
+            name="setup the CLIP OS toolkit env from scratch"[:50],
             haltOnFailure=True,
-            command=r"sudo rm -rf out cache run artifacts",
+            command=r"sudo rm -rf run && toolkit/setup.sh",
         ))
 
     def _getRequestedArtifactsFromBuildmaster(self, sdks: List[str],
@@ -722,7 +722,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
         if product_name != 'clipos':
             raise NotImplementedError("Only \"clipos\" product is supported for the moment.")
 
-        self.cleanupExpectedOutputLocations()
+        self.setupClipOsToolkit()
         self._getRequestedArtifactsFromBuildmaster(
             sdks=['clipos/sdk', 'clipos/sdk_debian'],
             cache=['clipos/core', 'clipos/efiboot'],
@@ -829,7 +829,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             ))
 
     def buildAndUploadDocs(self):
-        self.cleanupExpectedOutputLocations()
+        self.setupClipOsToolkit()
 
         self.addStep(clipos.steps.ToolkitEnvironmentShellCommand(
             name="build docs",

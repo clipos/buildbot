@@ -23,6 +23,7 @@ RUN dnf install --assumeyes \
         gnupg git git-lfs openssh-clients \
         @development-tools \
         runc sudo squashfs-tools \
+        bash diffutils \
         qemu libvirt-devel libvirt-daemon \
         rust cargo \
         dumb-init \

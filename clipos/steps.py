@@ -22,7 +22,7 @@ class ToolkitEnvironmentShellCommand(steps.ShellCommand):
 
     # The path to the file to source to activate the CLIP OS toolkit
     # environment (path relative from the repo root):
-    SOURCE_ME_FILE = "toolkit/source_me.sh"
+    SOURCE_ME_FILE = "toolkit/activate"
 
     def __init__(self,
                  command: Union[str, Sequence[Union[str, Property, util.Interpolate]]],
