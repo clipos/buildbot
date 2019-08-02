@@ -93,7 +93,6 @@ for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
             privileged=privileged,
             container_network_mode=setup.docker_worker_containers_network_mode,
             docker_host=setup.docker_host_uri,
-            use_volume_for_workspaces=True,
 
             # By default, max_builds is unlimited, reduce this:
             max_builds=5,  # TODO: any better heuristic?

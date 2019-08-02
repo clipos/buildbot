@@ -70,7 +70,6 @@ class DockerLatentWorker(buildbot.worker.docker.DockerLatentWorker):
                  flavor: str,
                  docker_host: str,
                  privileged: bool = False,
-                 use_volume_for_workspaces: bool = False,
                  container_network_mode: Optional[str] = None,
                  **kwargs: Any) -> None:
         # Custom properties:
