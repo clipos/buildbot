@@ -69,6 +69,7 @@ class DockerLatentWorker(buildbot.worker.docker.DockerLatentWorker):
     def __init__(self,
                  flavor: str,
                  docker_host: str,
+                 buildmaster_host_for_dockerized_workers: str,
                  privileged: bool = False,
                  container_network_mode: Optional[str] = None,
                  **kwargs: Any) -> None:
@@ -129,6 +130,10 @@ class DockerLatentWorker(buildbot.worker.docker.DockerLatentWorker):
             # (this one will be communicated via a environment variable which
             # will be carefully stripped before processing the build job work):
             password=None,
+
+            # Tell to the Docker worker to be created to join the Buildmaster
+            # to the proper IP address:
+            masterFQDN=buildmaster_host_for_dockerized_workers,
 
             # Our Docker settings:
             image=docker_image,

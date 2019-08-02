@@ -264,6 +264,21 @@ class SetupSettings(object):
             return "unix:///var/run/docker.sock"
 
     @property
+    def buildmaster_host_for_dockerized_workers(self) -> str:
+        """The hostname/IP address to advertise to workers upon creation to
+        join the Buildmaster. This setting is handy when dealing with private
+        IPs (e.g. when exposed via a IPsec tunnel)."""
+
+        try:
+            return self.__settings["BUILDBOT_MASTER_HOST_FOR_DOCKERIZED_WORKERS"]
+        except (KeyError, TypeError):
+            # Fallback to what Buildbot would have computed if this setting was
+            # not set...  See documentation for `masterFQDN` parameter of class
+            # `DockerLatentWorker` in Buildbot for details:
+            import socket
+            return socket.getfqdn()
+
+    @property
     def docker_worker_containers_network_mode(self) -> str:
         """The networking mode to use for the Docker containers that will be
         created by this master Buildbot instance as DockerLatentWorker."""
