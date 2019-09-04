@@ -39,14 +39,6 @@ from clipos.commons import line  # utility functions and stuff
 # purposes (mainly for debugging purposes for developers).
 setup = clipos.buildmaster.SetupSettings("setup_settings.json")
 
-# Just a quick check to be sure the artifacts directory is there and properly
-# set up (otherwise, fail miserably not to leave a chance for a builder to run
-# with this):
-if not os.access(setup.artifacts_dir, os.R_OK | os.W_OK | os.X_OK):
-    raise Exception(line(
-        """Artifacts directory {!r} seems not writable by the Buildbot
-        user.""").format(setup.artifacts_dir))
-
 
 #
 # BUILDBOT MASTER CONFIGURATION DATA STRUCTURE INITIALIZATION
