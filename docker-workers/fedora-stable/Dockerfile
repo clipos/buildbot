@@ -27,7 +27,7 @@ RUN dnf install --assumeyes \
         qemu libvirt-devel libvirt-daemon \
         rust cargo \
         dumb-init \
-        bsdtar \
+        bsdtar lftp \
     && dnf clean all
 
 # As repo is not packaged by Fedora, let's resort to the good old fetch from

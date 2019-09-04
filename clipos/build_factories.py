@@ -27,11 +27,11 @@ import clipos.workers
 from .commons import line  # utility functions and stuff
 
 
-def compute_artifact_path_or_url(base_path_or_url: str,
-                                 artifact_type: str,
-                                 buildername_property_name: str,
-                                 *path_items: str,
-                                 buildnumber_shard: Union[bool, str] = False):
+def compute_artifact_path(base_path: str,
+                          artifact_type: str,
+                          buildername_property_name: str,
+                          *path_items: str,
+                          buildnumber_shard: Union[bool, str] = False):
     """Returns a Renderable function that returns the path to the artifact name
     from the builder name (contained into the `buildername_property_name`
     property) and a list of path items to be appended to that path."""
@@ -52,11 +52,11 @@ def compute_artifact_path_or_url(base_path_or_url: str,
                 buildnumber = buildnumber_shard
             else:
                 raise ValueError("buildnumber_shard is of unexpected type")
-            return os.path.join(base_path_or_url, artifact_type,
+            return os.path.join(base_path, artifact_type,
                                 sanitized_buildername, buildnumber,
                                 *path_items)
         else:
-            return os.path.join(base_path_or_url, artifact_type,
+            return os.path.join(base_path, artifact_type,
                                 sanitized_buildername, *path_items)
     return renderable
 
@@ -512,40 +512,39 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
     def _uploadSourceTreeQuicksyncArtifacts(self):
         """Upload the source tree artifacts to the buildmaster"""
 
-        artifacts_url_for_buildername = None
-        if self.buildmaster_setup.artifacts_base_url:
-            artifacts_url_for_buildername = compute_artifact_path_or_url(
-                self.buildmaster_setup.artifacts_base_url,
-                "quicksync-artifacts",
-                "buildername",
-                buildnumber_shard=True,
-            )
-        self.addStep(steps.MultipleFileUpload(
+        self.addStep(steps.ShellCommand(
             name="save repo quick-sync artifacts on buildmaster",
             description=line(
                 """save the ".repo" directory archive and ".git/lfs"
                 directories archive as artifacts on the buildmaster"""),
             haltOnFailure=True,
-            workersrcs=[
-                self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
-                self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
-            ],
-            masterdest=compute_artifact_path_or_url(
-                self.buildmaster_setup.artifacts_dir,
-                "quicksync-artifacts",
-                "buildername",
-                buildnumber_shard=True,
-            ),
-            mode=0o644,
-            keepstamp=True,
-            url=artifacts_url_for_buildername,
+            command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
+                r"""
+                set -e -u -o pipefail
+                cat <<END_OF_LFTP_SCRIPT | lftp
+                connect ${ARTIFACTS_FTP_URL}
+                mkdir -p ${DESTINATION_PATH_IN_FTP}
+                cd ${DESTINATION_PATH_IN_FTP}
+                mput ${REPO_DIR_ARCHIVE_ARTIFACT_FILENAME} \
+                     ${GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME}
+                END_OF_LFTP_SCRIPT
+                """).strip()],
+            env={
+                "ARTIFACTS_FTP_URL": self.buildmaster_setup.artifacts_ftp_url,
+                "DESTINATION_PATH_IN_FTP": compute_artifact_path(
+                    "/", "quicksync-artifacts", "buildername",
+                    buildnumber_shard=True,
+                ),
+                "REPO_DIR_ARCHIVE_ARTIFACT_FILENAME": self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
+                "GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME": self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
+            },
         ))
         self.addStep(steps.MasterShellCommand(
             name="symlink latest artifacts location on buildmaster",
             haltOnFailure=True,
             command=[
                 "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
-                compute_artifact_path_or_url(
+                compute_artifact_path(
                     self.buildmaster_setup.artifacts_dir,
                     "quicksync-artifacts",
                     "buildername",
@@ -591,34 +590,53 @@ class ClipOsSourceTreeBuildFactoryBase(buildbot.process.factory.BuildFactory):
                 )
             return checker
 
-        self.addStep(steps.FileDownload(
+        self.addStep(steps.ShellCommand(
             name="retrieve repo directory artifact",
             description='retrieve the ".repo" directory archive from the buildmaster',
             haltOnFailure=True,
             doStepIf=is_artifact_download_required("repo-dir"),
-            mastersrc=compute_artifact_path_or_url(
-                self.buildmaster_setup.artifacts_dir,
-                "quicksync-artifacts",
-                'buildername_providing_repo_quicksync_artifacts',
-                self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
-                buildnumber_shard="latest",
-            ),
-            workerdest=self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
+            command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
+                r"""
+                set -e -u -o pipefail
+                cat <<END_OF_LFTP_SCRIPT | lftp
+                connect ${ARTIFACTS_FTP_URL}
+                set xfer:clobber yes
+                mget ${LATEST_REPO_DIR_ARCHIVE_ARTIFACT_FILEPATH_ON_FTP}
+                END_OF_LFTP_SCRIPT
+                """).strip()],
+            env={
+                "ARTIFACTS_FTP_URL": self.buildmaster_setup.artifacts_ftp_url,
+                "LATEST_REPO_DIR_ARCHIVE_ARTIFACT_FILEPATH_ON_FTP": compute_artifact_path(
+                    "/", "quicksync-artifacts",
+                    'buildername_providing_repo_quicksync_artifacts',
+                    self.REPO_DIR_ARCHIVE_ARTIFACT_FILENAME,
+                    buildnumber_shard="latest",
+                ),
+            },
         ))
-
-        self.addStep(steps.FileDownload(
+        self.addStep(steps.ShellCommand(
             name="retrieve git-lfs directories artifact",
             description='retrieve the ".git/lfs" directories archive from the buildmaster',
             haltOnFailure=True,
             doStepIf=is_artifact_download_required("git-lfs-dirs"),
-            mastersrc=compute_artifact_path_or_url(
-                self.buildmaster_setup.artifacts_dir,
-                "quicksync-artifacts",
-                'buildername_providing_repo_quicksync_artifacts',
-                self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
-                buildnumber_shard="latest",
-            ),
-            workerdest=self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
+            command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
+                r"""
+                set -e -u -o pipefail
+                cat <<END_OF_LFTP_SCRIPT | lftp
+                connect ${ARTIFACTS_FTP_URL}
+                set xfer:clobber yes
+                mget ${LATEST_GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILEPATH_ON_FTP}
+                END_OF_LFTP_SCRIPT
+                """).strip()],
+            env={
+                "ARTIFACTS_FTP_URL": self.buildmaster_setup.artifacts_ftp_url,
+                "LATEST_GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILEPATH_ON_FTP": compute_artifact_path(
+                    "/", "quicksync-artifacts",
+                    'buildername_providing_repo_quicksync_artifacts',
+                    self.GIT_LFS_SUBDIRECTORIES_ARCHIVE_ARTIFACT_FILENAME,
+                    buildnumber_shard="latest",
+                ),
+            },
         ))
 
     def _extractRepoSourceTreeArtifact(self):
@@ -679,7 +697,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
         for recipe in sdks:
             product_name, recipe_name = recipe.split('/')
             sdk_recipe_artifact_archive = "sdk:{}.{}.tar".format(product_name, recipe_name)
-            self.addStep(steps.FileDownload(
+            self.addStep(steps.ShellCommand(
                 name="retrieve {} SDK artifact".format(recipe)[:50],
                 description=line(
                     """retrieve the SDK artifact for \"{}/{}\" from the
@@ -687,20 +705,30 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
                     buildmaster""").format(product_name, recipe_name),
                 haltOnFailure=True,
                 doStepIf=lambda step: bool(step.getProperty("reuse_sdks_artifacts")),
-                mastersrc=compute_artifact_path_or_url(
-                    self.buildmaster_setup.artifacts_dir,
-                    "sdks",
-                    "buildername_providing_sdks_artifacts",
-                    sdk_recipe_artifact_archive,
-                    buildnumber_shard="latest",
-                ),
-                workerdest=sdk_recipe_artifact_archive,
+                command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
+                    r"""
+                    set -e -u -o pipefail
+                    cat <<END_OF_LFTP_SCRIPT | lftp
+                    connect ${ARTIFACTS_FTP_URL}
+                    set xfer:clobber yes
+                    mget ${SOURCE_PATH_ON_FTP}
+                    END_OF_LFTP_SCRIPT
+                    """).strip()],
+                env={
+                    "ARTIFACTS_FTP_URL": self.buildmaster_setup.artifacts_ftp_url,
+                    "SOURCE_PATH_ON_FTP": compute_artifact_path(
+                        "/", "sdks",
+                        "buildername_providing_sdks_artifacts",
+                        sdk_recipe_artifact_archive,
+                        buildnumber_shard="latest",
+                    ),
+                },
             ))
 
         for recipe in cache:
             product_name, recipe_name = recipe.split('/')
             cache_recipe_artifact_archive = "cache:{}.{}.tar".format(product_name, recipe_name)
-            self.addStep(steps.FileDownload(
+            self.addStep(steps.ShellCommand(
                 name="retrieve {} cache artifact".format(recipe)[:50],
                 description=line(
                     """retrieve the cache artifact for \"{}/{}\" from the
@@ -708,14 +736,24 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
                     buildmaster""").format(product_name, recipe_name),
                 haltOnFailure=True,
                 doStepIf=lambda step: bool(step.getProperty("reuse_cache_artifacts")),
-                mastersrc=compute_artifact_path_or_url(
-                    self.buildmaster_setup.artifacts_dir,
-                    "cache",
-                    "buildername_providing_cache_artifacts",
-                    cache_recipe_artifact_archive,
-                    buildnumber_shard="latest",
-                ),
-                workerdest=cache_recipe_artifact_archive,
+                command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
+                    r"""
+                    set -e -u -o pipefail
+                    cat <<END_OF_LFTP_SCRIPT | lftp
+                    connect ${ARTIFACTS_FTP_URL}
+                    set xfer:clobber yes
+                    mget ${SOURCE_PATH_ON_FTP}
+                    END_OF_LFTP_SCRIPT
+                    """).strip()],
+                env={
+                    "ARTIFACTS_FTP_URL": self.buildmaster_setup.artifacts_ftp_url,
+                    "SOURCE_PATH_ON_FTP": compute_artifact_path(
+                        "/", "cache",
+                        "buildername_providing_cache_artifacts",
+                        cache_recipe_artifact_archive,
+                        buildnumber_shard="latest",
+                    ),
+                },
             ))
 
     def buildProduct(self, product_name: str):
@@ -790,28 +828,30 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             return checker
 
         for artifact_type in ['sdks', 'cache', 'build']:
-            artifacts_url_for_buildername = None
-            if self.buildmaster_setup.artifacts_base_url:
-                artifacts_url_for_buildername = compute_artifact_path_or_url(
-                    self.buildmaster_setup.artifacts_base_url,
-                    artifact_type,
-                    "buildername",
-                    buildnumber_shard=True,
-                )
-
-            self.addStep(steps.DirectoryUpload(
+            self.addStep(steps.ShellCommand(
                 name="save {} artifact on buildmaster".format(artifact_type)[:50],
                 description="save the {} artifact archive on the buildmaster".format(artifact_type),
                 haltOnFailure=True,
                 doStepIf=is_artifact_save_necessary(artifact_type),
-                workersrc='artifacts/{}'.format(artifact_type),
-                masterdest=compute_artifact_path_or_url(
-                    self.buildmaster_setup.artifacts_dir,
-                    artifact_type,
-                    "buildername",
-                    buildnumber_shard=True,
-                ),
-                url=artifacts_url_for_buildername,
+                command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
+                    r"""
+                    set -e -u -o pipefail
+                    cat <<END_OF_LFTP_SCRIPT | lftp
+                    connect ${ARTIFACTS_FTP_URL}
+                    lcd ${SOURCE_PATH_ON_WORKER}
+                    mkdir -p ${DESTINATION_PATH_IN_FTP}
+                    cd ${DESTINATION_PATH_IN_FTP}
+                    mput *
+                    END_OF_LFTP_SCRIPT
+                    """).strip()],
+                env={
+                    "ARTIFACTS_FTP_URL": self.buildmaster_setup.artifacts_ftp_url,
+                    "SOURCE_PATH_ON_WORKER": 'artifacts/{}'.format(artifact_type),
+                    "DESTINATION_PATH_IN_FTP": compute_artifact_path(
+                        "/", artifact_type, "buildername",
+                        buildnumber_shard=True,
+                    ),
+                },
             ))
             self.addStep(steps.MasterShellCommand(
                 name="symlink latest {} artifacts".format(artifact_type)[:50],
@@ -819,7 +859,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
                 doStepIf=is_artifact_save_necessary(artifact_type),
                 command=[
                     "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
-                    compute_artifact_path_or_url(
+                    compute_artifact_path(
                         self.buildmaster_setup.artifacts_dir,
                         artifact_type,
                         "buildername",
@@ -838,31 +878,30 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             command="build_doc.sh",
         ))
 
-        artifacts_url_for_buildername = None
-        if self.buildmaster_setup.artifacts_base_url:
-            artifacts_url_for_buildername = compute_artifact_path_or_url(
-                self.buildmaster_setup.artifacts_base_url,
-                "docs",
-                "buildername",
-                buildnumber_shard=True,
-            )
-        self.addStep(steps.DirectoryUpload(
+        self.addStep(steps.ShellCommand(
             name="save docs artifact on buildmaster",
             description="save the documentation artifact archive on the buildmaster",
             haltOnFailure=True,
-            workersrc="out/doc/_build",
-            masterdest=compute_artifact_path_or_url(
-                self.buildmaster_setup.artifacts_dir,
-                "docs",
-                "buildername",
-                buildnumber_shard=True,
-            ),
-            url=compute_artifact_path_or_url(
-                self.buildmaster_setup.artifacts_base_url,
-                "docs",
-                "buildername",
-                buildnumber_shard=True,
-            )
+            command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
+                r"""
+                set -e -u -o pipefail
+                cat <<END_OF_LFTP_SCRIPT | lftp
+                connect ${ARTIFACTS_FTP_URL}
+                lcd ${SOURCE_PATH_ON_WORKER}
+                mkdir -p ${DESTINATION_PATH_IN_FTP}
+                cd ${DESTINATION_PATH_IN_FTP}
+                mput *
+                END_OF_LFTP_SCRIPT
+                """).strip()],
+            env={
+                "ARTIFACTS_FTP_URL": self.buildmaster_setup.artifacts_ftp_url,
+                "SOURCE_PATH_ON_WORKER": 'out/doc/_build',
+                "DESTINATION_PATH_IN_FTP": compute_artifact_path(
+                    "/", "docs",
+                    "buildername",
+                    buildnumber_shard=True,
+                ),
+            },
         ))
 
         self.addStep(steps.MasterShellCommand(
@@ -870,7 +909,7 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
             haltOnFailure=True,
             command=[
                 "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
-                compute_artifact_path_or_url(
+                compute_artifact_path(
                     self.buildmaster_setup.artifacts_dir,
                     "docs",
                     "buildername",

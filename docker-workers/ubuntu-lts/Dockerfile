@@ -33,7 +33,8 @@ RUN apt-get -y -q --no-install-recommends install \
 # [BUILDBOT-SPECIFIC] Installs pip in order to be able to install the
 # buildbot-worker:
 RUN apt-get -y -q --no-install-recommends install \
-        build-essential python3-dev python3-setuptools python3-pip dumb-init
+        build-essential python3-dev python3-setuptools python3-pip dumb-init \
+        lftp
 
 # Create an unprivileged user:
 # [BUILDBOT-SPECIFIC] The name and the user's home directory location are

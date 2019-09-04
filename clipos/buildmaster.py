@@ -241,12 +241,12 @@ class SetupSettings(object):
             return "artifacts"
 
     @property
-    def artifacts_base_url(self) -> Optional[str]:
-        """The base URL to use to expose the artifacts built by the Buildbot
-        workers."""
+    def artifacts_ftp_url(self) -> Optional[str]:
+        """The URL pointing to the directory where are stored on an anonymous
+        FTP server the artifacts built by the Buildbot workers."""
 
         if self.__settings:
-            return self.__settings["BUILDBOT_ARTIFACTS_BASE_URL"]
+            return self.__settings["BUILDBOT_ARTIFACTS_FTP_URL"]
         else:
             return None
 
