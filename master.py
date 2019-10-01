@@ -189,33 +189,12 @@ for flavor in clipos.workers.DockerLatentWorker.FLAVORS:
         reference_clipos_builder = builder
     clipos_on_all_flavors_builders.append(builder)
 
-clipos_docs_builder = util.BuilderConfig(
-    name='clipos-docs',
-    tags=['clipos-docs', 'docker-env:{}'.format(reference_worker_flavor)],
-    workernames=[w.name for w in unprivileged_reference_workers],
-    factory=clipos.build_factories.ClipOsProductDocumentationBuildBuildFactory(
-        # Pass on the buildmaster setup settings
-        buildmaster_setup=setup,
-    ),
-)
-
 clipos_ondemand_builder = util.BuilderConfig(
     name='clipos ondemand',
     tags=['clipos', 'on-demand',
           'docker-env:{}'.format(reference_worker_flavor)],
     workernames=[w.name for w in privileged_reference_workers],
     factory=clipos.build_factories.ClipOsProductBuildBuildFactory(
-        # Pass on the buildmaster setup settings
-        buildmaster_setup=setup,
-    ),
-)
-
-clipos_docs_ondemand_builder = util.BuilderConfig(
-    name='clipos-docs ondemand',
-    tags=['clipos-docs', 'on-demand',
-          'docker-env:{}'.format(reference_worker_flavor)],
-    workernames=[w.name for w in unprivileged_reference_workers],
-    factory=clipos.build_factories.ClipOsProductDocumentationBuildBuildFactory(
         # Pass on the buildmaster setup settings
         buildmaster_setup=setup,
     ),
@@ -231,11 +210,9 @@ c['builders'] = [
 
     # CLIP OS builds from scratch
     *clipos_on_all_flavors_builders,   # CLIP OS images
-    clipos_docs_builder,               # CLIP OS docs
 
     # CLIP OS builds on demand
     clipos_ondemand_builder,           # CLIP OS images
-    clipos_docs_ondemand_builder,      # CLIP OS docs
 ]
 
 
@@ -267,7 +244,6 @@ clipos_incremental_build_intraday_sched = schedulers.Nightly(
     name='clipos-master-intraday-incremental-build',
     builderNames=[
         reference_clipos_builder.name,
-        clipos_docs_builder.name,
     ],
     dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
     hour=12, minute=30,  # at 12:30 (i.e. during lunch)
@@ -296,7 +272,6 @@ clipos_build_nightly_sched = schedulers.Nightly(
     name='clipos-master-nightly-build',
     builderNames=[
         reference_clipos_builder.name,
-        clipos_docs_builder.name,
     ],
     dayOfWeek='1,2,3,4,5',  # only work days: from Monday (1) to Friday (5)
     hour=0, minute=45,  # at 00:45
@@ -407,7 +382,6 @@ clipos_custom_build_force_sched = schedulers.ForceScheduler(
     label="Custom build",
     builderNames=[
         clipos_ondemand_builder.name,
-        clipos_docs_ondemand_builder.name,
     ],
     codebases = [
         util.CodebaseParameter(

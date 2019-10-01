@@ -868,56 +868,6 @@ class ClipOsToolkitEnvironmentBuildFactoryBase(ClipOsSourceTreeBuildFactoryBase)
                 ],
             ))
 
-    def buildAndUploadDocs(self):
-        self.setupClipOsToolkit()
-
-        self.addStep(clipos.steps.ToolkitEnvironmentShellCommand(
-            name="build docs",
-            haltOnFailure=True,
-            # Note: build_doc.sh is exposed in PATH by the source_me script.
-            command="build_doc.sh",
-        ))
-
-        self.addStep(steps.ShellCommand(
-            name="save docs artifact on buildmaster",
-            description="save the documentation artifact archive on the buildmaster",
-            haltOnFailure=True,
-            command=["/usr/bin/env", "bash", "-c", textwrap.dedent(
-                r"""
-                set -e -u -o pipefail
-                cat <<END_OF_LFTP_SCRIPT | lftp
-                connect ${ARTIFACTS_FTP_URL}
-                lcd ${SOURCE_PATH_ON_WORKER}
-                mkdir -p ${DESTINATION_PATH_IN_FTP}
-                cd ${DESTINATION_PATH_IN_FTP}
-                mput *
-                END_OF_LFTP_SCRIPT
-                """).strip()],
-            env={
-                "ARTIFACTS_FTP_URL": self.buildmaster_setup.artifacts_ftp_url,
-                "SOURCE_PATH_ON_WORKER": 'out/doc/_build',
-                "DESTINATION_PATH_IN_FTP": compute_artifact_path(
-                    "/", "docs",
-                    "buildername",
-                    buildnumber_shard=True,
-                ),
-            },
-        ))
-
-        self.addStep(steps.MasterShellCommand(
-            name="symlink latest artifacts location on buildmaster",
-            haltOnFailure=True,
-            command=[
-                "ln", "-snf", util.Interpolate("%(prop:buildnumber)s"),
-                compute_artifact_path(
-                    self.buildmaster_setup.artifacts_dir,
-                    "docs",
-                    "buildername",
-                    buildnumber_shard="latest",
-                ),
-            ],
-        ))
-
 
 class ClipOsProductBuildBuildFactory(ClipOsToolkitEnvironmentBuildFactoryBase):
     """Build factory to build CLIP OS product"""
@@ -928,17 +878,6 @@ class ClipOsProductBuildBuildFactory(ClipOsToolkitEnvironmentBuildFactoryBase):
         self.cleanupWorkspaceIfRequested()
         self.syncSources(use_repo_quicksync_artifacts=True)
         self.buildProduct("clipos")
-
-
-class ClipOsProductDocumentationBuildBuildFactory(ClipOsToolkitEnvironmentBuildFactoryBase):
-    """Build factory to build the CLIP OS product documentation."""
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-        self.cleanupWorkspaceIfRequested()
-        self.syncSources(use_repo_quicksync_artifacts=True)
-        self.buildAndUploadDocs()
 
 
 # vim: set ft=python ts=4 sts=4 sw=4 et tw=79:
